@@ -63,7 +63,7 @@ Anything marked work in progress there, Thunderbolt device support among them, i
 
 ## Reporting a problem
 
-Open an issue on [omacom/omarchy-mac](https://github.com/omacom/omarchy-mac/issues), or on [omacom/omarchy-mac-installer](https://github.com/omacom/omarchy-mac-installer/issues) for the macOS installer app. Include the output of:
+Open an issue on [omacom/omarchy-mac-pkgs](https://github.com/omacom/omarchy-mac-pkgs/issues), or on [omacom/omarchy-mac-installer](https://github.com/omacom/omarchy-mac-installer/issues) for the macOS installer app. Include the output of:
 
 ```bash
 uname -a

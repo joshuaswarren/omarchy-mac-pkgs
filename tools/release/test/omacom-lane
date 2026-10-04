@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # tools/release/mac-release and mac-aurora-pin on the omacom lane, against a
-# fake omacom/omarchy-pkgs, a fake omacom/omarchy-mac, channel databases
+# fake omacom/omarchy-pkgs, a fake omacom/omarchy-mac-pkgs, channel databases
 # served from a directory and a fake gh. bin/repo in the fake packages
 # repository applies an advance to those databases the way advance-channel
 # would, so a whole promotion runs: pin, gates, widening, scoped advance.
@@ -32,7 +32,7 @@ git config --global protocol.file.allow always
 git config --global uploadpack.allowFilter true
 git config --global uploadpack.allowAnySHA1InWant true
 
-# ── omarchy-mac: three commits on quattro-upstream ──────────────────────────
+# ── omarchy-mac-pkgs: three commits on main ──────────────────────────
 git init --quiet "$tmp/mac-work"
 for n in 1 2 3; do
   echo "$n" >"$tmp/mac-work/version"
@@ -45,7 +45,7 @@ echo side >"$tmp/mac-work/version"
 git -C "$tmp/mac-work" commit --quiet -am side
 side=$(git -C "$tmp/mac-work" rev-parse HEAD)
 git clone --quiet --bare "$tmp/mac-work" "$tmp/omarchy-mac.git"
-git -C "$tmp/omarchy-mac.git" branch --quiet -m master quattro-upstream
+git -C "$tmp/omarchy-mac.git" branch --quiet -m master main
 
 # ── omacom/omarchy-pkgs master ──────────────────────────────────────────────
 k1=$(hex a)
@@ -248,8 +248,8 @@ run "$release" --dry-run "$mac2" || fail "the dry run of a release failed"
 has "pin:             omarchy-mac 1.0-1 -> 1.0-2 (_commit -> ${mac2:0:12}" "the runtime pin"
 has "pin:             omarchy-mac-boot 1.0-1 -> 1.0-2" "the boot pin"
 has "waits for:       omarchy-mac 1.0-2 (after the pin merges) on edge" "the pending publication"
-run "$release" --dry-run "$side" && fail "a commit off quattro-upstream was accepted"
-has "is not on omacom/omarchy-mac quattro-upstream" "a commit off the branch"
+run "$release" --dry-run "$side" && fail "a commit off main was accepted"
+has "is not on omacom/omarchy-mac-pkgs main" "a commit off the branch"
 run "$release" "$mac2" && fail "the pin did not stop for the merge"
 has "opened pull request #100 pinning ${mac2:0:12}" "the pin pull request"
 pin_branch=$(git -C "$tmp/pkgs.git" for-each-ref --format='%(refname:short)' "refs/heads/mac-release/pin-${mac2:0:12}-*")

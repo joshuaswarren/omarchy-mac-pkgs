@@ -28,7 +28,7 @@ DIST = ROOT / "dist"
 
 SITE_TITLE = "Omarchy Mac"
 SITE_URL = os.environ.get("MAC_MANUAL_URL", "").rstrip("/")
-REPO_URL = "https://github.com/omacom/omarchy-mac"
+REPO_URL = "https://github.com/omacom/omarchy-mac-pkgs"
 INSTALLER_URL = "https://github.com/omacom/omarchy-mac-installer"
 
 

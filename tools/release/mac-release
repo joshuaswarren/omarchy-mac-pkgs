@@ -10,7 +10,7 @@
 # and promotes with its own interfaces. Each run reads where things stand and
 # takes the next step, then stops:
 #
-#   1. pin: with a commit of omacom/omarchy-mac quattro-upstream, open a pull
+#   1. pin: with a commit of omacom/omarchy-mac-pkgs main, open a pull
 #      request moving _commit of the recipes built from it (omarchy-mac,
 #      omarchy-mac-boot). Merging it is the owner's; CI's publish.yml then
 #      signs and publishes the build to edge with bin/publish-artifact
@@ -61,9 +61,9 @@ case $lane in
   *) echo "mac-release: unknown lane $lane (omacom or fork)" >&2; exit 64 ;;
 esac
 
-source_repo=${MAC_RELEASE_SOURCE_REPO:-omacom/omarchy-mac}
+source_repo=${MAC_RELEASE_SOURCE_REPO:-omacom/omarchy-mac-pkgs}
 source_git=${MAC_RELEASE_SOURCE_GIT:-https://github.com/$source_repo.git}
-source_branch=${MAC_RELEASE_SOURCE_BRANCH:-quattro-upstream}
+source_branch=${MAC_RELEASE_SOURCE_BRANCH:-main}
 config_file=${MAC_RELEASE_CONFIG:-${ASAHI_RELEASE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/mac-release.conf}}
 read -r -a source_packages <<<"${MAC_RELEASE_SOURCE_PACKAGES:-omarchy-mac omarchy-mac-boot}"
 default_packages=(omarchy-mac omarchy-mac-boot linux-aurora m1n1-aurora uboot-asahi)
@@ -329,7 +329,7 @@ step_pin() {
     cp "$work/pinned/$package/PKGBUILD" "$pkgs/pkgbuilds/$package/PKGBUILD"
     body+=$'\n'"- $line"
   done
-  number=$(open_pr "$branch" "Pin the Mac packages to omarchy-mac ${commit:0:8}" "$body")
+  number=$(open_pr "$branch" "Pin the Mac packages to omarchy-mac-pkgs ${commit:0:8}" "$body")
   stop "opened pull request #$number pinning ${commit:0:12}; once the owner merges it, CI publishes the packages to edge"
 }
 

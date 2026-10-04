@@ -1,7 +1,7 @@
 <svg viewBox="0 0 900 620" role="img" aria-label="How the Mac packages, the package repository and the installer fit together" xmlns="http://www.w3.org/2000/svg">
 <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" class="arrow"/></marker><marker id="arrow-brand" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" class="arrow brand"/></marker></defs>
 <rect class="lane" x="16" y="16" width="276" height="370"/>
-<text class="lane-title" x="30" y="40">omacom/omarchy-mac</text>
+<text class="lane-title" x="30" y="40">omacom/omarchy-mac-pkgs</text>
 <text class="lane-sub" x="30" y="58">Mac packages and tooling</text>
 <rect class="lane" x="312" y="16" width="276" height="370"/>
 <text class="lane-title" x="326" y="40">omacom/omarchy-pkgs</text>

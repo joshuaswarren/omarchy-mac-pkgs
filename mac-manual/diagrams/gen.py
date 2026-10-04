@@ -185,7 +185,7 @@ class Diagram:
 def repos() -> Diagram:
     d = Diagram("repositories", 900, 620, "How the Mac packages, the package repository and the installer fit together")
     d.lanes = [
-        Lane(16, 16, 276, 370, "omacom/omarchy-mac", "Mac packages and tooling"),
+        Lane(16, 16, 276, 370, "omacom/omarchy-mac-pkgs", "Mac packages and tooling"),
         Lane(312, 16, 276, 370, "omacom/omarchy-pkgs", "the signed package repository"),
         Lane(608, 16, 276, 370, "omacom/omarchy-mac-installer", "the macOS app and the image"),
     ]

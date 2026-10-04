@@ -4,11 +4,11 @@
 
 | Your change | Where it goes |
 | --- | --- |
-| Mac settings, services and boot support that stay installed and run again at updates | Here, against `main` |
+| Mac settings, services and boot support that stay installed and run again at updates | Here, in [omacom/omarchy-mac-pkgs](https://github.com/omacom/omarchy-mac-pkgs), against `main` |
 | A new Mac-only package | Here: open an issue first, then a pull request that meets the package contract |
 | The Mac manual | Here, in the same pull request as the behaviour it describes |
 | Release, acceptance or package-resolution tooling | Here, in `tools/` |
-| The desktop, shell, bindings or shared helpers | [omacom/omarchy](https://github.com/omacom/omarchy). While [#13362](https://github.com/omacom/omarchy/pull/13362) is open, Apple Silicon desktop work that builds on it goes to `quattro-upstream` here. |
+| The desktop, shell, bindings or shared helpers | [omacom/omarchy](https://github.com/omacom/omarchy). Apple Silicon desktop work that builds on [#13362](https://github.com/omacom/omarchy/pull/13362) goes to that pull request while it is open. omarchy-mac's `quattro-upstream` is frozen. |
 | Package recipes, signing and publication | [omacom/omarchy-pkgs](https://github.com/omacom/omarchy-pkgs) |
 | The macOS app, the Linux image or anything that runs once to install | [omacom/omarchy-mac-installer](https://github.com/omacom/omarchy-mac-installer) |
 | A hardware test report | [omarchy-m-testing.org](https://omarchy-m-testing.org) |
@@ -46,18 +46,16 @@ Omarchy keeps no Mac code of its own. It knows which platform it runs on and giv
 
 **A change that needs both.** First propose the new plug-in point upstream, doing nothing on a platform that doesn't implement it. Then implement it in the package here, with an integration test in `test/integration/` that runs the package against the runtime. Ship the package with or before the Omarchy that uses the new point. If you change one of `omarchy-mac-boot`'s mkinitcpio drop-ins, also update the copies upstream keeps as test fixtures; CI warns when they drift.
 
-While #13362 is open, Apple Silicon desktop work that builds on it goes to `quattro-upstream` here instead of straight to omacom/omarchy.
-
 ## Pull requests
 
 - Open them against `main`. Each needs an approval from someone other than its author, resolved review threads and passing CI.
 - Keep a pull request to one change. A change to what the runtime reads from a package (the platform root, lifecycle entrypoints, setup commands) comes with an integration test in `test/integration/`.
 - Boot-critical changes need cold-boot evidence from a test Mac before they are released.
-- Anything Apple-specific must stay behind the platform detector, and a change to installed systems comes with its migration.
+- Anything Apple-specific must stay behind the platform detector. A change to installed systems handles the systems it finds, in the package's own setup; moving Macs from the earlier projects is the standalone migration's job.
 
 ## Issues
 
-Bugs go to [the issue tracker](https://github.com/omacom/omarchy-mac/issues), labelled `package:omarchy-mac`, `package:omarchy-mac-boot` or `desktop`. Installer bugs go to [omacom/omarchy-mac-installer](https://github.com/omacom/omarchy-mac-installer/issues).
+Bugs go to [the issue tracker](https://github.com/omacom/omarchy-mac-pkgs/issues), labelled `package:omarchy-mac`, `package:omarchy-mac-boot` or `desktop`. Installer bugs go to [omacom/omarchy-mac-installer](https://github.com/omacom/omarchy-mac-installer/issues).
 
 ## Releases
 

@@ -13,11 +13,11 @@ Omarchy on a Mac is official Omarchy plus a small set of Mac packages, all publi
 | Repository | What it holds |
 | --- | --- |
 | [omacom/omarchy](https://github.com/omacom/omarchy) | The desktop, the same as on every other Omarchy machine. Mac decisions go through one platform detector and a few dispatch points that do nothing on other platforms. |
-| [omacom/omarchy-mac](https://github.com/omacom/omarchy-mac) | The sources of `omarchy-mac` and `omarchy-mac-boot`, the Mac tooling (release orchestration, VM and hardware acceptance, evidence manifests) and this manual |
+| [omacom/omarchy-mac-pkgs](https://github.com/omacom/omarchy-mac-pkgs) | The sources of `omarchy-mac` and `omarchy-mac-boot`, the Mac tooling (release orchestration, VM and hardware acceptance, evidence manifests) and this manual |
 | [omacom/omarchy-pkgs](https://github.com/omacom/omarchy-pkgs) | The recipes that build every package, the Mac ones included, and the signed `[omarchy]` repository with its `edge`, `rc` and `stable` channels |
 | [omacom/omarchy-mac-installer](https://github.com/omacom/omarchy-mac-installer) | The macOS installer app, its pinned Asahi installer engine and the Mac image builder |
 
-Until the generic Mac changes are merged into omacom/omarchy, the `quattro-upstream` branch of omarchy-mac carries them. It is the one integration branch for Apple Silicon work.
+Until the generic Mac changes are merged into omacom/omarchy, [#13362](https://github.com/omacom/omarchy/pull/13362) carries them. omarchy-mac's `quattro-upstream` branch, where they were integrated, is frozen.
 
 ## Two Mac packages
 

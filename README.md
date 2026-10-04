@@ -42,16 +42,16 @@ CI runs all of them, with the runtime pinned to a reviewed commit.
 
 ## Contributing
 
-Package changes come here as pull requests against `main`. The rule of thumb: if a change only means something on an Apple Silicon Mac, it belongs in a package here; if Omarchy needs a new place for a platform to plug in, or the fix helps other machines too, it belongs upstream in [omacom/omarchy](https://github.com/omacom/omarchy). Installer and packaging changes have homes of their own. [CONTRIBUTING.md](CONTRIBUTING.md) explains each, with examples.
+Package changes come here, to [omacom/omarchy-mac-pkgs](https://github.com/omacom/omarchy-mac-pkgs), as pull requests against `main`. The rule of thumb: if a change only means something on an Apple Silicon Mac, it belongs in a package here; if Omarchy needs a new place for a platform to plug in, or the fix helps other machines too, it belongs upstream in [omacom/omarchy](https://github.com/omacom/omarchy). Installer and packaging changes have homes of their own. [CONTRIBUTING.md](CONTRIBUTING.md) explains each, with examples.
 
 ## Transitional branches
 
-Two branches remain from when this repository carried the whole Mac desktop. Each goes away once its job is done.
+These packages used to live in [omacom/omarchy-mac](https://github.com/omacom/omarchy-mac), which carried the whole Mac desktop. Two of its branches remain while existing Macs move over; neither takes package changes.
 
-- **`quattro`** is what Macs on the Omarchy 4 fork update from today. A migration path will move those Macs onto official Omarchy with these packages; the branch is retired after that.
-- **`quattro-upstream`** holds the Apple Silicon desktop work being merged into Omarchy through [omacom/omarchy#13362](https://github.com/omacom/omarchy/pull/13362). Desktop changes that build on it go there until the merge lands; then it is retired.
+- **`quattro`** is what Macs on the Omarchy 4 fork update from. It stays only to deliver the standalone migration script that moves those Macs onto official Omarchy and these packages, and is retired after the migration window.
+- **`quattro-upstream`** is frozen. It held the Apple Silicon desktop work submitted to Omarchy as [omacom/omarchy#13362](https://github.com/omacom/omarchy/pull/13362); package work continues here, desktop work in omacom/omarchy.
 
-The Omarchy 3.8 tree that used to be `main` is kept, read-only, as `archive/omarchy-3.8`.
+The Omarchy 3.8 tree that used to be omarchy-mac's `main` is kept there, read-only, as `archive/omarchy-3.8`.
 
 ## Credits
 
