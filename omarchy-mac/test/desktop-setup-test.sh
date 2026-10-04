@@ -20,18 +20,7 @@ done
   fail 'the platform names the [asahi-alarm] keyring for omarchy update to refresh'
 python3 -c 'import json, sys; json.load(open(sys.argv[1]))' "$platform/display-cutouts.json" ||
   fail 'the cutout description is valid JSON'
-# A runtime older than the platform root reads the same files from its own tree.
-while read -r file legacy; do
-  legacy=$stage/usr/share/omarchy/default/$legacy
-  [[ -f $legacy && ! -L $legacy ]] && cmp -s "$platform/$file" "$legacy" ||
-    fail "$file is also staged, unchanged, where an older runtime reads it"
-done <<'LEGACY'
-hypr/defaults/apple.lua hypr/platform/defaults/apple.lua
-hypr/settings/apple.lua hypr/platform/settings/apple.lua
-hypr/gestures/apple-gestures.lua hypr/platform/apple-gestures.lua
-key-names omarchy/platform/key-names
-display-cutouts.json shell/platform/display-cutouts.json
-LEGACY
+[[ ! -e $stage/usr/share/omarchy ]] || fail "nothing is staged in the omarchy package's tree"
 # displays.conf follows the runtime's grammar (docs/file-layout.md): one
 # directive per line, a name with no "/", comments on whole lines only. Nothing
 # in it may be a line the runtime would silently ignore.
