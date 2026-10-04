@@ -235,9 +235,9 @@ expect_refused "a restore from the running system" \
 rm "$mac_root/var/lib/omarchy/limine.enabled"
 TEST_PATH_FIRST=$tmp/check-stub run_check "--restore --no-mutex" "$live_cmdline"
 expect_refused "limine-snapper-restore on a Mac that boots GRUB" \
-  "This Mac boots GRUB, so limine-snapper-restore does not apply" "omarchy-snapshot restore"
+  "This Mac boots GRUB, so limine-snapper-restore does not apply" "Omarchy has" "no other snapshot restore"
 [[ ! -s $tmp/check-ran ]] || fail "no boot check runs outside a snapshot"
-pass "outside a snapshot the restore is refused: boot the snapshot first, or use the GRUB restore"
+pass "outside a snapshot the restore is refused: boot the snapshot first, and a GRUB Mac is told it has no restore"
 
 # Kernel files alone (snapper rollback): the snapshot's kernel must be /boot's.
 # $1 is the snapshot's kernel image.

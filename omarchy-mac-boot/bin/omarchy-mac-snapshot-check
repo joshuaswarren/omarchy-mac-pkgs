@@ -253,8 +253,9 @@ that is gets refused. limine-snapper-list shows the snapshots the menu offers.
 MESSAGE
     else
       cat >&2 <<'MESSAGE'
-This Mac boots GRUB, so limine-snapper-restore does not apply. Restore with
-omarchy-snapshot restore, which swaps the root subvolume.
+This Mac boots GRUB, so limine-snapper-restore does not apply, and Omarchy has
+no other snapshot restore. Moving the Mac onto Limine makes later snapshots
+restorable from the Limine menu.
 MESSAGE
     fi
     refuse

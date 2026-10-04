@@ -215,12 +215,12 @@ LSS_PICK=$tmp/picked run_restore apple-silicon limine "$tmp/hooks"
   fail "a matching snapshot picked from the list is restored and offered the reboot" "$(cat "$tmp/out" "$tmp/err")"
 pass "a matching snapshot picked from limine-snapper-restore's list is restored"
 
-# KNOWN INCOMPATIBILITY with #13362: its restore always runs limine-snapper-restore
-# and has no subvolume swap (omarchy-system-snapshot-restore), yet omarchy-mac-boot's
-# pre hook refuses a GRUB Mac and sends it back to omarchy-snapshot restore for one.
+# Omarchy's restore always runs limine-snapper-restore and has no subvolume
+# swap, so the pre hook refuses a GRUB Mac without sending it back to one.
 limine_mac
 rm "$mac_root/var/lib/omarchy/limine.enabled"
 TEST_CMDLINE=$live_cmdline run_restore apple-silicon limine "$tmp/hooks"
-(( status == 0 )) && grep -Fxq 'sudo omarchy-system-snapshot-restore' "$tmp/calls" && ! grep -q 'limine-snapper-restore\|restored' "$tmp/calls" ||
-  fail "a GRUB Mac restores with the subvolume swap, never limine-snapper-restore" "$(cat "$tmp/calls" "$tmp/err")"
-pass "a Mac that boots GRUB uses the GRUB-era restore"
+(( status != 0 )) && ! grep -Fxq restored "$tmp/calls" && grep -Fq "This Mac boots GRUB" "$tmp/err" &&
+  ! grep -Fq "omarchy-snapshot restore" "$tmp/err" ||
+  fail "a GRUB Mac is refused and not sent back to omarchy-snapshot restore" "$(cat "$tmp/calls" "$tmp/err")"
+pass "a Mac that boots GRUB is told limine-snapper-restore does not apply"
