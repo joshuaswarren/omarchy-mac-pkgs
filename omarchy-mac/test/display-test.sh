@@ -68,23 +68,11 @@ LUA
 }
 
 "$user_setup" "$stage"
-[[ ! -e $marker && -L $wants ]] || fail 'without a Hyprland config the cursor waits and the microphone is still set up'
+[[ -L $wants ]] || fail 'without a Hyprland config the microphone is still set up'
 mkdir -p "${looknfeel%/*}"
 printf '%s\n' '-- User look and feel' >"$looknfeel"
-APPLE=0 "$user_setup" "$stage"
-software_cursor && fail 'other platforms keep the hardware cursor'
 "$user_setup" "$stage"
-software_cursor || fail 'Apple Silicon draws the cursor in software'
-"$user_setup" "$stage"
-(( $(grep -c no_hardware_cursors "$looknfeel") == 1 )) || fail 'cursor setup is idempotent'
-pass 'Apple Silicon users get a software cursor once'
-
-printf '%s\n' '-- User look and feel' >"$looknfeel"
-"$user_setup" "$stage"
-software_cursor && fail 'a removed software cursor stays removed'
-rm "$marker"
-printf '%s\n' 'hl.config({ cursor = { no_hardware_cursors = false } })' >"$looknfeel"
-"$user_setup" "$stage"
-[[ $(<"$looknfeel") == 'hl.config({ cursor = { no_hardware_cursors = false } })' && -f $marker ]] ||
-  fail 'an existing cursor choice is kept'
-pass 'a removed or existing cursor choice survives repeated setup'
+[[ $(<"$looknfeel") == '-- User look and feel' && ! -e $marker ]] ||
+  fail "user setup leaves the user's looknfeel.lua alone" "$(cat "$looknfeel")"
+software_cursor && fail 'the software cursor is not written into the user file'
+pass "user setup writes nothing into the user's looknfeel.lua"

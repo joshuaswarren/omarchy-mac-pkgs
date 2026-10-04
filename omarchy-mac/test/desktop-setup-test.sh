@@ -123,20 +123,17 @@ input="$HOME/.config/hypr/input.lua"
 "$setup_user" "$stage"
 [[ ! -e $input ]] || fail 'a user without a Hyprland input file gets none'
 ! grep -q '^wrap\|^repair' "$CALLS" || fail 'a staging root skips the Electron desktop entries'
+# User setup never edits the user's Hyprland files, and leaves alone a block
+# an earlier version appended.
 mkdir -p "${input%/*}"
 printf '%s\n' '-- personal overrides' >"$input"
-PLATFORM=generic-aarch64 "$setup_user" "$stage"
-! grep -q 'omarchy-apple-touchpad' "$input" || fail 'other platforms keep their trackpad defaults'
 "$setup_user" "$stage"
-grep -Fq 'natural_scroll = true' "$input" && grep -Fq 'tap_to_click = false' "$input" || fail 'Apple trackpads scroll naturally and click physically'
+[[ $(<"$input") == '-- personal overrides' ]] || fail "Apple user setup leaves the user's input.lua alone" "$(cat "$input")"
+printf '%s\n' '-- omarchy-apple-touchpad: natural scrolling and physical clicks.' 'hl.config({ input = { touchpad = { natural_scroll = true, tap_to_click = false } } })' >"$input"
 before=$(<"$input")
 "$setup_user" "$stage"
-[[ $(<"$input") == "$before" ]] || fail 'trackpad setup is idempotent'
-printf '%s\n' 'hl.config({' '  input = {' '    touchpad = {' '      natural_scroll = false,' '    },' '  },' '})' >"$input"
-before=$(<"$input")
-"$setup_user" "$stage"
-[[ $(<"$input") == "$before" ]] || fail 'an explicit trackpad choice is preserved' "$(cat "$input")"
-pass 'Apple trackpads get natural scrolling and physical clicks once, keeping explicit choices'
+[[ $(<"$input") == "$before" ]] || fail "a block an earlier setup appended stays the user's" "$(cat "$input")"
+pass "user setup writes nothing into the user's input.lua"
 
 flags="$HOME/.config/brave-flags.conf"
 printf '%s\n' '--ozone-platform=wayland' >"$flags"
