@@ -48,6 +48,6 @@ run_apple_gl() {
 
 run_apple_gl
 if grep -q 'no_hardware_cursors' "$looknfeel"; then
-  fail "Apple Electron GL setup leaves the software cursor to omarchy-mac"
+  fail "Apple Electron GL setup writes no software cursor"
 fi
-pass "Apple Electron GL setup leaves the software cursor to omarchy-mac"
+pass "Apple Electron GL setup writes no software cursor"

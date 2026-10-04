@@ -36,7 +36,8 @@ Omarchy keeps no Mac code of its own. It knows which platform it runs on and giv
 
 | Change | Where |
 | --- | --- |
-| A MacBook key or gesture binds wrongly | Upstream, in Omarchy's binds gated on Apple Silicon |
+| The built-in keyboard lacks a key Omarchy binds | `omarchy-mac`, as a udev hwdb remap for the built-in keyboard only |
+| A bind or gesture behaves wrongly | Upstream, the same on every machine: Omarchy has no Apple Silicon binds |
 | Wi-Fi drops after resume on one Broadcom chip | `omarchy-mac` |
 | A new default package for every Mac | Upstream, in the Apple Silicon package list |
 | A PC-only quirk also fires on Macs | Upstream, skipped behind `omarchy-hw-apple-silicon` |
