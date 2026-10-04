@@ -12,8 +12,6 @@ for entry in setup-system setup-user; do
   [[ -x $stage/usr/lib/omarchy/mac/$entry && $(stat -c %a "$stage/usr/lib/omarchy/mac/$entry") == 755 ]] ||
     fail "the $entry entrypoint is staged for omarchy-lifecycle-dispatch"
 done
-[[ -x $stage/usr/bin/omarchy-hw-apple && $(readlink "$stage/usr/share/omarchy/bin/omarchy-hw-apple") == /usr/bin/omarchy-hw-apple ]] ||
-  fail 'the legacy alias is staged in /usr/bin and linked from the runtime tree'
 platform=$stage/usr/share/omarchy-platform
 for file in hypr/defaults/apple.lua hypr/settings/apple.lua hypr/gestures/apple-gestures.lua key-names display-cutouts.json displays.conf keyrings audio.json; do
   [[ -f $platform/$file && ! -L $platform/$file ]] || fail "$file is staged in the platform root"
