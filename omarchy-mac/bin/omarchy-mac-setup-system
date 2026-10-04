@@ -35,7 +35,7 @@ retire "$root/etc/modprobe.d/asahi-notch.conf" "$share/legacy/asahi-notch.conf"
 # goes, with the comment block and blank line that migration wrote right above
 # it; every other line stays, and a file left with only blank lines goes.
 # The initramfs rebuild it owes is recorded first, under the marker the
-# runtime's cleanup migration and the migration engine rebuild from.
+# runtime's cleanup migration rebuilds from.
 quirk="options brcmfmac feature_disable=0x82000"
 brcmfmac="$root/etc/modprobe.d/brcmfmac.conf"
 if [[ -L $brcmfmac ]]; then

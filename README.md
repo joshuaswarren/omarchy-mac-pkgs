@@ -9,7 +9,7 @@ This is the home of the Apple Silicon add-on packages for [Omarchy](https://gith
 | Package | What it does | Version |
 | --- | --- | --- |
 | [`omarchy-mac`](omarchy-mac/) | Apple Silicon defaults and support services: the Wi-Fi backend and resume recovery, microphone mapping, speaker safety, the notch, keyboard and gestures, battery charge limits and hardware video decode | Semver, in `omarchy-mac/version` |
-| [`omarchy-mac-boot`](omarchy-mac-boot/) | Boot support: the initramfs and vendor firmware, in-place encryption, first boot, Limine and U-Boot, update verification, factory reset and moving existing Macs onto these packages | The UTC date of the commit its recipe pins |
+| [`omarchy-mac-boot`](omarchy-mac-boot/) | Boot support: the initramfs and vendor firmware, in-place encryption, first boot, Limine and U-Boot, update verification and factory reset | The UTC date of the commit its recipe pins |
 
 Both are built by recipes in [omacom/omarchy-pkgs](https://github.com/omacom/omarchy-pkgs) and published to pkgs.omarchy.org for aarch64, on `edge` first. Each recipe pins an exact commit of this repository.
 

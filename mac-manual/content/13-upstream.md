@@ -8,7 +8,7 @@ A change lives as close to upstream as it can. Every layer the Mac work touches 
 
 | Layer | Upstream | How changes flow |
 | --- | --- | --- |
-| Desktop | [omacom/omarchy](https://github.com/omacom/omarchy) | Only platform-neutral changes go upstream: the platform detector, composable boot configuration, generic encryption and password fixes, dispatch points and one migration caller. They benefit x86 too, and do nothing on platforms without an implementation. Changes that affect every aarch64 machine are co-authored with the Omarchy Dragon (Snapdragon) maintainers. |
+| Desktop | [omacom/omarchy](https://github.com/omacom/omarchy) | Only platform-neutral changes go upstream: the platform detector, composable boot configuration, generic encryption and password fixes and dispatch points. They benefit x86 too, and do nothing on platforms without an implementation. Changes that affect every aarch64 machine are co-authored with the Omarchy Dragon (Snapdragon) maintainers. |
 | Mac packages | [omacom/omarchy-mac](https://github.com/omacom/omarchy-mac) | `omarchy-mac` and `omarchy-mac-boot`, each independently versioned and tested. They stay out of any desktop submission. |
 | Packages | [omacom/omarchy-pkgs](https://github.com/omacom/omarchy-pkgs) | Mac recipes are pinned to exact omarchy-mac commits, built for aarch64 only and published to `edge` first. |
 | Installer | [omacom/omarchy-mac-installer](https://github.com/omacom/omarchy-mac-installer) | The macOS app, the engine overlay and the image builder |

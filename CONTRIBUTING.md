@@ -22,7 +22,7 @@ Omarchy keeps no Mac code of its own. It knows which platform it runs on and giv
 **Upstream, in omacom/omarchy:**
 
 - Platform detection: `omarchy-hw-platform` and the `omarchy-hw-apple-silicon` predicate.
-- The places a platform plugs in: the lifecycle dispatch operations (`setup-boot`, `setup-system`, `setup-user`, provisioning, reset, `update-verify`, `update-takeover`, `migrate`, the app install hooks), the platform root `/usr/share/omarchy-platform` and what Omarchy reads from it, the mkinitcpio HOOKS baseline, and the pacman platform guard.
+- The places a platform plugs in: the lifecycle dispatch operations (`setup-boot`, `setup-system`, `setup-user`, provisioning, reset, `update-verify`, `update-takeover`, the app install hooks), the platform root `/usr/share/omarchy-platform` and what Omarchy reads from it, the mkinitcpio HOOKS baseline, and the pacman platform guard.
 - The default package lists, the Apple Silicon one included: adding or dropping a package every Mac gets by default is an upstream change to `install/omarchy-apple-silicon.packages`.
 - Skipping a PC or Intel Mac quirk that misfires on Apple Silicon, behind `omarchy-hw-apple-silicon`.
 - Fixes found during Mac work that help every machine, such as the battery, LUKS and keyboard-layout fixes in [#13362](https://github.com/omacom/omarchy/pull/13362).
@@ -30,7 +30,7 @@ Omarchy keeps no Mac code of its own. It knows which platform it runs on and giv
 **Here, in the packages:**
 
 - `omarchy-mac`: the files in the platform root (Mac bindings and gestures, key names, the notch cutouts, display and audio hints, keyrings), the Mac's services (the Wi-Fi backend and resume recovery, microphone mapping, speaker safety), its setup and app hooks, battery charge limits, the hardware video decode default and the Apple pacman templates.
-- `omarchy-mac-boot`: the Mac's lifecycle entrypoints and boot chain: the initramfs drop-ins and vendor firmware, in-place encryption, first boot, Limine and U-Boot, update verification, update takeover, factory reset, snapshot restore checks and moving existing Macs onto these packages.
+- `omarchy-mac-boot`: the Mac's lifecycle entrypoints and boot chain: the initramfs drop-ins and vendor firmware, in-place encryption, first boot, Limine and U-Boot, update verification, update takeover, factory reset and snapshot restore checks. Moving an existing Mac onto these packages is a standalone migration, not part of either package.
 
 **Some examples:**
 

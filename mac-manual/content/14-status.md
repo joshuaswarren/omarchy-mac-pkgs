@@ -12,8 +12,8 @@ This manual describes the stack the first release installs. It is being built on
 2. The Mac packages (`omarchy-mac`, `omarchy-mac-boot`, `linux-aurora`, `m1n1-aurora`, `uboot-asahi` and the carried aquamarine) land on Omarchy's `edge` channel, aarch64 only.
 3. The first test images built from `quattro-upstream` are installed on the M2 Max, then on the M1 Pro.
 4. The remaining Mac features move behind the platform detector and dispatch points: audio, Wi-Fi resume, display, video decode, the encryption lifecycle, snapshots and boot verification.
-5. The generic changes are proposed to omacom/omarchy, in order: the platform detector and profiles; composable boot configuration and generic encryption fixes; the dispatch interface; the migration caller.
-6. The move for existing Macs is built and tested for each kind of install.
+5. The generic changes are proposed to omacom/omarchy, in order: the platform detector and profiles; composable boot configuration and generic encryption fixes; the dispatch interface.
+6. The move for existing Macs, a standalone migration script outside the packages, is built and tested for each kind of install.
 7. After cold-boot qualification on the M1 Pro and the M2 Max, the packages are promoted to `rc` and `stable` and the stable installer catalog is published.
 8. Once the generic changes are merged into Omarchy and the move has been accepted for each kind of install, the move for existing Macs is switched on.
 

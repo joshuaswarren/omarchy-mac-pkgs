@@ -1,3 +1,0 @@
-#!/bin/bash
-# Stands in for the target omarchy's command: the runtime checkout's own lists.
-OMARCHY_PATH=$OMARCHY_TEST_RUNTIME exec "$OMARCHY_TEST_RUNTIME/bin/omarchy-pkg-defaults" "$@"
