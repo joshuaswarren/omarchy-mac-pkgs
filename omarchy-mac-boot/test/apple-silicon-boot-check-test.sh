@@ -576,12 +576,15 @@ expect_pass "an m1n1 image update-m1n1 built with the overlaid device tree"
 run_check
 expect_pass "an m1n1 image with the overlaid device tree, in the full check"
 [[ -z $(ls -A "$root/run") ]] || fail "the rebuild writes the overlaid device tree only to its own work directory"
-# A DTBS the administrator set: update-m1n1 leaves the overlays out, and so
-# does the rebuild.
-printf 'DTBS="%s"\n' "${dtbs[*]}" >"$root/etc/default/update-m1n1"
+# A DTBS the administrator added to the packaged configuration: update-m1n1
+# leaves the overlays out, and so does the rebuild.
+cp "$ROOT/files/etc/default/update-m1n1" "$root/etc/default/update-m1n1"
+printf 'DTBS="%s"\n' "${dtbs[*]}" >>"$root/etc/default/update-m1n1"
 write_boot_bin "${dtbs[@]}"
 run_check --boot-chain
 expect_pass "an administrator's DTBS, which update-m1n1 builds without the overlays"
+grep -Fq "DTBS is set in /etc/default/update-m1n1" "$test_tmp/err" ||
+  fail "the check says an administrator's DTBS leaves the overlays out" "$(cat "$test_tmp/err")"
 # An edited configuration kept over the packaged one's .pacnew, and no
 # configuration at all: update-m1n1 never applies the overlays, nor does the rebuild.
 printf 'export LC_ALL=C\n# dtb_overlays_update_m1n1\n' >"$root/etc/default/update-m1n1"
