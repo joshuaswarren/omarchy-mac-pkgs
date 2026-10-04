@@ -8,6 +8,13 @@ printf '#!/bin/bash\necho apple-silicon\n' >"$work/bin/omarchy-hw-platform"
 printf '#!/bin/bash\necho "14e4:${WIFI_ID:-4433}"\n' >"$work/bin/lspci"
 chmod +x "$work/bin/"*
 
+# The moon key is Do Not Disturb on a Mac; logind must not suspend on it.
+"$ROOT"/install "$work/root"
+dropin="$work/root/usr/lib/systemd/logind.conf.d/20-omarchy-mac-sleep-key.conf"
+grep -qx 'HandleSuspendKey=ignore' "$dropin" && grep -qx 'HandleSuspendKeyLongPress=ignore' "$dropin" ||
+  fail 'the vendor logind drop-in stops the moon key suspending'
+pass 'the package ships a logind drop-in that ignores the sleep key'
+
 # speakersafetyd is enabled by this package's preset alone, applied once.
 root="$work/speakers"
 "$ROOT"/install "$root"
