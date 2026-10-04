@@ -2,7 +2,7 @@ name: Tests
 
 on:
   push:
-    branches: [main, proposal/main]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -42,16 +42,16 @@ jobs:
     env:
       ARCH_IMAGE: archlinux:base-devel@sha256:8745817f349ed24373341ddb92776209eeec3f0364ea48f7f645ac5800d30a50
     steps:
-      - name: Check out omarchy-mac
+      - name: Check out omarchy-mac-pkgs
         uses: actions/checkout@v7
         with:
-          path: omarchy-mac
+          path: omarchy-mac-pkgs
           persist-credentials: false
 
       - name: Read the pinned runtime
         id: runtime
         run: |
-          read -r repository commit < <(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' omarchy-mac/test/integration/runtime)
+          read -r repository commit < <(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' omarchy-mac-pkgs/test/integration/runtime)
           echo "repository=$repository" >>"$GITHUB_OUTPUT"
           echo "commit=$commit" >>"$GITHUB_OUTPUT"
 
@@ -67,7 +67,7 @@ jobs:
         id: arch
         run: |
           docker run -d --init --name arch \
-            -v "$GITHUB_WORKSPACE:/work" -w /work/omarchy-mac \
+            -v "$GITHUB_WORKSPACE:/work" -w /work/omarchy-mac-pkgs \
             "$ARCH_IMAGE" sleep infinity
           docker exec arch pacman -Syu --noconfirm --needed \
             git jq lua python python-yaml nodejs npm ripgrep shellcheck imagemagick ffmpeg kitty \
@@ -79,9 +79,9 @@ jobs:
         if: ${{ !cancelled() && steps.arch.outcome == 'success' }}
         run: |
           status=0
-          for package in omarchy-mac/*/; do
+          for package in omarchy-mac-pkgs/*/; do
             package=$(basename "$package")
-            [[ -x omarchy-mac/$package/install && -x omarchy-mac/$package/test/all ]] || continue
+            [[ -x omarchy-mac-pkgs/$package/install && -x omarchy-mac-pkgs/$package/test/all ]] || continue
             echo "::group::$package"
             if ! docker exec -u tester -e HOME=/home/tester -e OMARCHY_TEST_RUNTIME=/work/runtime arch "$package/test/all"; then
               status=1

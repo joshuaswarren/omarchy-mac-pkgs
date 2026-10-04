@@ -2,7 +2,7 @@ name: Mac manual
 
 on:
   push:
-    branches: [main, proposal/main]
+    branches: [main]
     paths:
       - "mac-manual/**"
       - ".github/workflows/mac-manual.yml"

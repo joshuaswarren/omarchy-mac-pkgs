@@ -1,3 +1,4 @@
 # The Omarchy runtime CI tests the packages against: a repository and a full commit.
-# Move it deliberately, like a recipe pin; upstream omacom/omarchy once #13362 merges.
-omacom/omarchy-mac 2b159ad5509f55d0e04b5aff46b737530c919c30
+# Move it deliberately, like a recipe pin. Today the head of omacom/omarchy#13362;
+# upstream omacom/omarchy once it merges.
+omacom/omarchy 69d80cccd0a293b6e641e78f48250ab4852df420
