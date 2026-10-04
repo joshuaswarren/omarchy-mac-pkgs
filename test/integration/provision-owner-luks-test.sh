@@ -171,23 +171,35 @@ SH
 chmod +x "$stub_bin"/*
 
 omarchy=$tmp/omarchy
-mkdir -p "$omarchy/install/provisioning" "$omarchy/bin"
-printf 'OMARCHY\n' >"$omarchy/logo.txt"
-: >"$omarchy/install/provisioning/setup-form.sh"
-cp "$ROOT/install/provisioning/luks-rekey.sh" "$omarchy/install/provisioning/"
+mkdir -p "$omarchy/bin"
 for command in omarchy-lifecycle-dispatch omarchy-hw-platform omarchy-hw-apple-silicon; do
   ln -s "$ROOT/bin/$command" "$omarchy/bin/$command"
 done
 
 export PATH="$stub_bin:$tmp/apple/bin:$PATH"
-export OMARCHY_PATH=$omarchy OMARCHY_PROC_ROOT=$tmp/apple/proc OMARCHY_LIFECYCLE_ROOT=$lifecycle
-export OMARCHY_PROVISIONING_DIR=$prov OMARCHY_PROVISION_OWNER_LOG=$tmp/provision.log
-export OMARCHY_LUKS_DEVICE=$device OMARCHY_PROVISION_OWNER_SOURCE=1 COLUMNS=80
+export OMARCHY_PATH=$omarchy OMARCHY_PROC_ROOT=$tmp/apple/proc OMARCHY_LIFECYCLE_ROOT=$lifecycle COLUMNS=80
 units=$tmp/units
 export OMARCHY_SYSTEMD_UNIT_DIR=$units
 
+# omarchy-provision-owner runs only as root, so its worker is lifted out the way
+# upstream's own tests load it, reading /etc from the fixture root.
+sed -n '/^PROVISIONING_UNLOCK_FILES=(/,/^)/p; /^UNLOCK_OWNER=/p; /^log_step() {/,/^}/p
+  /^limine_auto_unlock_present() {/,/^}/p; /^limine_auto_unlock_drop() {/,/^}/p; /^unlock_owner() {/,/^}/p
+  /^luks_auto_unlock_present() {/,/^}/p; /^luks_auto_unlock_drop() {/,/^}/p; /^luks_record_slots() {/,/^}/p
+  /^rekey_luks() {/,/^}/p; /^luks_boot_layout() {/,/^}/p; /^rekey_accepts_password() {/,/^}/p
+  /^esp_path() {/,/^}/p; /^reset_limine_config() {/,/^}/p; /^cleanup_oem_state() {/,/^}/p
+  /^run_provisioning() {/,/^}/p; /^platform_ready() {/,/^}/p' \
+  "$ROOT/bin/omarchy-provision-owner" | sed "s|/etc/|$root/etc/|g" >"$tmp/provision-owner.sh"
+for function in luks_record_slots rekey_luks luks_boot_layout run_provisioning platform_ready; do
+  grep -q "^$function() {" "$tmp/provision-owner.sh" || fail "omarchy-provision-owner defines $function"
+done
 # shellcheck disable=SC1091
-source "$ROOT/bin/omarchy-provision-owner"
+source "$ROOT/install/provisioning/luks-rekey.sh"
+# shellcheck disable=SC1091
+source "$tmp/provision-owner.sh"
+PROVISIONING_DIR=$prov
+REKEY_STATE=$prov/luks-rekey.state
+LOG_FILE=$tmp/provision.log
 
 # The worker's account steps and the screen are not under test.
 STATE_FILE=$tmp/state
@@ -200,8 +212,8 @@ configure_hostname() { :; }
 configure_timezone() { :; }
 finalize_user() { :; }
 limine_entries_stale() { return 1; }
+luks_device() { echo "$tmp/luks-device"; }
 clear_logo() { :; }
-PADDING_LEFT=0
 sleep() { :; }
 screen=$tmp/screen
 say() { [[ $1 != --foreground ]] || shift 2; printf '%s\n' "$*" >>"$screen"; }
@@ -247,7 +259,7 @@ fixture() {
   printf '0 throwaway-install-key\n' >"$slots"
   rm -f "$tmp"/fail-* "$tmp/token-slot" "$tmp/token-id" "$screen" "$tmp/gum-stdin"
   rm -rf "$units"
-  : >"$OMARCHY_PROVISION_OWNER_LOG"
+  : >"$LOG_FILE"
   : >"$tmp/gum-input"
   password=owner-secret
   UNLOCK_OWNER=""
@@ -261,8 +273,8 @@ slot_of() {
 fixture
 platform_ready || fail "an encrypted image is ready for owner setup" "$(cat "$screen" 2>/dev/null)"
 : >"$calls"
-run_provisioning >>"$OMARCHY_PROVISION_OWNER_LOG" 2>&1 ||
-  fail "first-boot setup finishes" "$(cat "$OMARCHY_PROVISION_OWNER_LOG")"
+run_provisioning >>"$LOG_FILE" 2>&1 ||
+  fail "first-boot setup finishes" "$(cat "$LOG_FILE")"
 owner=$(slot_of owner-secret)
 
 [[ -n $owner && $(awk '{ print $1 }' "$slots") == "$owner" ]] ||
@@ -281,8 +293,8 @@ owner_slot=$owner" ]] || fail "encrypt.state is finished with the owner's slot a
 grep -qx provision-commit "$calls" && grep -qx provision-verify "$calls" && grep -qx luks-slots "$calls" ||
   fail "the boot package commits and verifies the unlock and records the slot through dispatch" "$(cat "$calls")"
 ! grep -Eq '^(limine-update|update-grub)$' "$calls" || fail "the Limine UKI path never runs on Apple Silicon" "$(cat "$calls")"
-! declare -F show_recovery_key >/dev/null && ! declare -F prepare_luks_recovery >/dev/null && ! grep -q "^gum " "$calls" && [[ ! -e $screen ]] || fail "setup shows no recovery key" "$(cat "$calls" "$screen" 2>&1)"
-! grep -Fq -e owner-secret -e throwaway-install-key "$OMARCHY_PROVISION_OWNER_LOG" ||
+! grep -q "^gum " "$calls" && [[ ! -e $screen ]] || fail "setup shows no recovery key" "$(cat "$calls" "$screen" 2>&1)"
+! grep -Fq -e owner-secret -e throwaway-install-key "$LOG_FILE" ||
   fail "no key material reaches the provision log"
 [[ ! -e $units ]] || fail "setup arms no password reset" "$(ls -R "$units" 2>&1)"
 pass "an encrypted Apple image's first boot re-keys to the owner's password alone and takes the throwaway key out of the boot chain"
@@ -293,8 +305,8 @@ pass "an encrypted Apple image's first boot re-keys to the owner's password alon
 fixture
 printf '0 throwaway-install-key\n3 OLD-RECOVERY-KEY\n' >"$slots"
 printf 'staged_slot=0\nrecovery_slot=3\nrecovery_shown=1\nphase=staged\n' >"$prov/luks-rekey.state"
-run_provisioning >>"$OMARCHY_PROVISION_OWNER_LOG" 2>&1 ||
-  fail "setup begun with a recovery key finishes" "$(cat "$OMARCHY_PROVISION_OWNER_LOG")"
+run_provisioning >>"$LOG_FILE" 2>&1 ||
+  fail "setup begun with a recovery key finishes" "$(cat "$LOG_FILE")"
 owner=$(slot_of owner-secret)
 [[ -n $owner && $(awk '{ print $1 }' "$slots") == "$owner" ]] ||
   fail "the older setup's recovery slot is retired" "$(cat "$slots")"
@@ -308,14 +320,14 @@ fixture
 rm "$encrypt_state"
 if platform_ready; then fail "setup stops on a plain root when install.conf asked for encryption"; fi
 grep -q 'set up to encrypt its disk, but the disk was not encrypted' "$screen" &&
-  grep -q 'set up to encrypt its disk' "$OMARCHY_PROVISION_OWNER_LOG" ||
-  fail "the boot package's reason reaches the owner and the log" "$(cat "$screen" "$OMARCHY_PROVISION_OWNER_LOG")"
+  grep -q 'set up to encrypt its disk' "$LOG_FILE" ||
+  fail "the boot package's reason reaches the owner and the log" "$(cat "$screen" "$LOG_FILE")"
 printf 'format=1\nencrypt=0\n' >"$root/var/lib/omarchy/mac-first-boot/install.conf"
 rm -f "$prov/luks-key" "$boot_key" "$screen"
 sed -i "s| $key_line||" "$grub_default" "$root/boot/grub/grub.cfg"
 platform_ready || fail "encrypt=0 lets a plain root be set up" "$(cat "$screen" 2>/dev/null)"
-run_provisioning >>"$OMARCHY_PROVISION_OWNER_LOG" 2>&1 ||
-  fail "a plain Mac finishes setup" "$(cat "$OMARCHY_PROVISION_OWNER_LOG")"
+run_provisioning >>"$LOG_FILE" 2>&1 ||
+  fail "a plain Mac finishes setup" "$(cat "$LOG_FILE")"
 ! grep -q provision-commit "$calls" && ! grep -q 'cryptsetup luks' "$calls" || fail "a plain Mac is not re-keyed" "$(cat "$calls")"
 pass "provision-prepare holds setup to the encryption install.conf asked for"
 
@@ -323,7 +335,7 @@ pass "provision-prepare holds setup to the encryption install.conf asked for"
 # A failed boot rebuild keeps the unattended unlock and every slot.
 fixture
 touch "$tmp/fail-mkinitcpio"
-if run_provisioning >>"$OMARCHY_PROVISION_OWNER_LOG" 2>&1; then
+if run_provisioning >>"$LOG_FILE" 2>&1; then
   fail "a failed boot rebuild fails the attempt"
 fi
 [[ -f $boot_key && -f $prov/luks-key && -f $prov/pending ]] || fail "a failed rebuild keeps the throwaway key and setup pending"
@@ -331,8 +343,8 @@ grep -q "$key_line" "$grub_default" || fail "a failed rebuild restores rd.luks.k
 [[ -n $(slot_of throwaway-install-key) ]] || fail "a failed rebuild retires no slot"
 grep -Fxq 'phase=configured' "$encrypt_state" || fail "a failed rebuild leaves encrypt.state configured"
 rm "$tmp/fail-mkinitcpio"
-run_provisioning >>"$OMARCHY_PROVISION_OWNER_LOG" 2>&1 ||
-  fail "the retry finishes" "$(cat "$OMARCHY_PROVISION_OWNER_LOG")"
+run_provisioning >>"$LOG_FILE" 2>&1 ||
+  fail "the retry finishes" "$(cat "$LOG_FILE")"
 [[ $(wc -l <"$slots") == 1 && ! -e $boot_key && ! -e $prov/pending ]] || fail "the retry finishes with one slot" "$(cat "$slots")"
 pass "a failed boot rebuild keeps the unattended unlock and every slot for the retry"
 
@@ -340,7 +352,7 @@ pass "a failed boot rebuild keeps the unattended unlock and every slot for the r
 # encrypt.state is already finished while the throwaway slot and file remain.
 fixture
 touch "$tmp/fail-kill"
-if run_provisioning >>"$OMARCHY_PROVISION_OWNER_LOG" 2>&1; then
+if run_provisioning >>"$LOG_FILE" 2>&1; then
   fail "a failed slot retirement fails the attempt"
 fi
 grep -Fxq 'phase=finished' "$encrypt_state" && [[ ! -e $boot_key && -f $prov/luks-key ]] ||
@@ -350,8 +362,8 @@ first_owner=$(slot_of owner-secret)
 grep -Fxq "owner_slot=$first_owner" "$encrypt_state" || fail "the commit recorded the first password's slot"
 password=another-password
 rekey_accepts_password || fail "while the throwaway key opens the disk a retry may choose a new password"
-run_provisioning >>"$OMARCHY_PROVISION_OWNER_LOG" 2>&1 ||
-  fail "the retry finishes after the commit" "$(cat "$OMARCHY_PROVISION_OWNER_LOG")"
+run_provisioning >>"$LOG_FILE" 2>&1 ||
+  fail "the retry finishes after the commit" "$(cat "$LOG_FILE")"
 owner=$(slot_of another-password)
 [[ $(wc -l <"$slots") == 1 && -n $owner && -z $(slot_of throwaway-install-key) &&
   -z $(slot_of owner-secret) && ! -e $prov/luks-key ]] ||
@@ -366,18 +378,19 @@ for leftover in boot cmdline; do
   fixture
   rm "$prov/luks-key"
   printf '1 owner-secret\n' >"$slots"
-  printf 'staged_slot=0\nowner_slot=1\nphase=done\n' >"$prov/luks-rekey.state"
+  # Built with the current layout, so the re-key itself rebuilds nothing.
+  printf 'staged_slot=0\nowner_slot=1\nphase=done\nboot_layout=%s\n' "$(luks_boot_layout)" >"$prov/luks-rekey.state"
   sed -i 's/^phase=.*/phase=finished/' "$encrypt_state"
   if [[ $leftover == boot ]]; then
     sed -i "s| $key_line||" "$grub_default" "$root/boot/grub/grub.cfg"
   else
     rm "$boot_key"
   fi
-  if run_provisioning >>"$OMARCHY_PROVISION_OWNER_LOG" 2>&1; then
+  if run_provisioning >>"$LOG_FILE" 2>&1; then
     fail "setup does not finish with a leftover $leftover unlock"
   fi
-  grep -q 'the boot-time auto-unlock is still configured' "$OMARCHY_PROVISION_OWNER_LOG" ||
-    fail "$leftover: provision-verify is what stops setup" "$(cat "$OMARCHY_PROVISION_OWNER_LOG")"
+  grep -q 'the boot-time auto-unlock is still configured' "$LOG_FILE" ||
+    fail "$leftover: provision-verify is what stops setup" "$(cat "$LOG_FILE")"
   [[ -f $prov/pending ]] || fail "a leftover $leftover unlock keeps setup pending"
 done
 pass "a finished encrypt.state never ends setup while a boot-time unlock remains"
@@ -388,8 +401,8 @@ pass "a finished encrypt.state never ends setup while a boot-time unlock remains
 fixture
 printf '5 tpm-sealed-key\n' >>"$slots"
 echo 5 >"$tmp/token-slot"
-run_provisioning >>"$OMARCHY_PROVISION_OWNER_LOG" 2>&1 ||
-  fail "setup finishes beside a token" "$(cat "$OMARCHY_PROVISION_OWNER_LOG")"
+run_provisioning >>"$LOG_FILE" 2>&1 ||
+  fail "setup finishes beside a token" "$(cat "$LOG_FILE")"
 owner=$(slot_of owner-secret)
 [[ -n $owner && $owner != 5 ]] ||
   fail "the owner's password gets its own slot beside a token" "$(cat "$slots")"
@@ -405,7 +418,7 @@ fixture
 printf '5 tpm-sealed-key\n' >>"$slots"
 echo 5 >"$tmp/token-slot"
 touch "$tmp/fail-kill"
-if run_provisioning >>"$OMARCHY_PROVISION_OWNER_LOG" 2>&1; then
+if run_provisioning >>"$LOG_FILE" 2>&1; then
   fail "a failed slot retirement beside a token fails the attempt"
 fi
 rm "$tmp/fail-kill"
@@ -414,8 +427,8 @@ password=another-password
 rekey_accepts_password && fail "beside a token, a retry refuses a password that opens nothing"
 password=owner-secret
 rekey_accepts_password || fail "beside a token, a retry takes the password the owner slot holds"
-run_provisioning >>"$OMARCHY_PROVISION_OWNER_LOG" 2>&1 ||
-  fail "the retry beside a token finishes" "$(cat "$OMARCHY_PROVISION_OWNER_LOG")"
+run_provisioning >>"$LOG_FILE" 2>&1 ||
+  fail "the retry beside a token finishes" "$(cat "$LOG_FILE")"
 [[ $(wc -l <"$slots") == 1 && -z $(slot_of tpm-sealed-key) ]] || fail "the retry retires the token's slot" "$(cat "$slots")"
 pass "a retry beside a token takes only the password the owner slot holds"
 
@@ -423,8 +436,8 @@ pass "a retry beside a token takes only the password the owner slot holds"
 fixture
 password=owner-secret-xtrace
 set -x
-run_provisioning >>"$OMARCHY_PROVISION_OWNER_LOG" 2>&1
+run_provisioning >>"$LOG_FILE" 2>&1
 set +x
-! grep -Fq "$password" "$OMARCHY_PROVISION_OWNER_LOG" ||
-  fail "xtrace keeps secrets out of the provision log" "$(cat "$OMARCHY_PROVISION_OWNER_LOG")"
+! grep -Fq "$password" "$LOG_FILE" ||
+  fail "xtrace keeps secrets out of the provision log" "$(cat "$LOG_FILE")"
 pass "secret-bearing re-key commands are not captured under xtrace"

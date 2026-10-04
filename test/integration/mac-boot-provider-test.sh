@@ -3,18 +3,13 @@ set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/runtime-test.sh"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-mkdir -p "$work/runtime/install/provisioning" "$work/bin" "$work/stage"
-cp "$ROOT/install/provisioning/luks-rekey.sh" "$work/runtime/install/provisioning/"
-printf 'Omarchy\n' >"$work/runtime/logo.txt"
-printf '#!/bin/bash\nexit 0\n' >"$work/bin/omarchy-hw-apple-silicon"
-chmod +x "$work/bin/omarchy-hw-apple-silicon"
-export PATH="$work/bin:$PATH" OMARCHY_PATH="$work/runtime"
-export OMARCHY_PROVISION_OWNER_SOURCE=1
+mkdir -p "$work/stage"
 grep -Fxq omarchy-mac-boot "$ROOT/install/omarchy-apple-silicon.packages" || fail "Apple fresh-install inputs carry the boot package"
 pass "Apple installs carry the boot package their lifecycles dispatch to"
 bash "$BOOT/install" "$work/stage"
-bash -c 'source "$1"' _ "$ROOT/bin/omarchy-provision-owner"
-# Factory reset is upstream's script, which elevates when run: it only parses.
+# Owner provisioning and factory reset are upstream's scripts, which run only
+# as root: they only parse.
+bash -n "$ROOT/bin/omarchy-provision-owner"
 bash -n "$ROOT/bin/omarchy-system-factory-reset"
 pass "Apple lifecycles load the separately staged package"
 
@@ -32,6 +27,11 @@ for entry in omarchy-provision-owner omarchy-system-factory-reset; do
 done
 for operation in provision-prepare provision-commit provision-verify reset-prepare reset-verify reset-commit reset-rollback luks-slots; do
   [[ -x $work/stage/usr/lib/omarchy/mac-boot/$operation ]] || fail "omarchy-mac-boot ships $operation"
+done
+dispatched=$(grep -o 'omarchy-lifecycle-dispatch" \(--resolve \)\?[a-z-]*' "$ROOT/bin/omarchy-provision-owner" | awk '{ print $NF }' | sort -u)
+[[ -n $dispatched ]] || fail "omarchy-provision-owner dispatches its boot steps"
+for operation in $dispatched; do
+  [[ -x $work/stage/usr/lib/omarchy/mac-boot/$operation ]] || fail "omarchy-mac-boot ships $operation, which owner provisioning dispatches"
 done
 pass "owner provisioning and factory reset handle Apple boot files only through the boot package's dispatch entrypoints"
 [[ ! -e $work/stage/boot ]] || fail "staging does not change boot files"
