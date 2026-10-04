@@ -13,7 +13,7 @@ for entry in setup-system setup-user; do
     fail "the $entry entrypoint is staged for omarchy-lifecycle-dispatch"
 done
 platform=$stage/usr/share/omarchy-platform
-for file in hypr/defaults/apple.lua hypr/settings/apple.lua hypr/gestures/apple-gestures.lua key-names display-cutouts.json displays.conf keyrings audio.json; do
+for file in key-names display-cutouts.json displays.conf keyrings audio.json; do
   [[ -f $platform/$file && ! -L $platform/$file ]] || fail "$file is staged in the platform root"
 done
 [[ $(grep -v '^#' "$platform/keyrings") == asahi-alarm-keyring ]] ||

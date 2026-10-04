@@ -29,14 +29,14 @@ Omarchy keeps no Mac code of its own. It knows which platform it runs on and giv
 
 **Here, in the packages:**
 
-- `omarchy-mac`: the files in the platform root (Mac bindings and gestures, key names, the notch cutouts, display and audio hints, keyrings), the Mac's services (the Wi-Fi backend and resume recovery, microphone mapping, speaker safety), its setup and app hooks, battery charge limits, and the hardware video decode default.
+- `omarchy-mac`: the files in the platform root (key names, the notch cutouts, display and audio hints, keyrings), the Mac's services (the Wi-Fi backend and resume recovery, microphone mapping, speaker safety), its setup and app hooks, battery charge limits, and the hardware video decode default.
 - `omarchy-mac-boot`: the Mac's lifecycle entrypoints and boot chain: the initramfs drop-ins and vendor firmware, in-place encryption, first boot, Limine and U-Boot, update verification, update takeover, factory reset and snapshot restore checks. Moving an existing Mac onto these packages is a standalone migration, not part of either package.
 
 **Some examples:**
 
 | Change | Where |
 | --- | --- |
-| A MacBook key or gesture binds wrongly | `omarchy-mac`, in its platform root Hyprland files |
+| A MacBook key or gesture binds wrongly | Upstream, in Omarchy's binds gated on Apple Silicon |
 | Wi-Fi drops after resume on one Broadcom chip | `omarchy-mac` |
 | A new default package for every Mac | Upstream, in the Apple Silicon package list |
 | A PC-only quirk also fires on Macs | Upstream, skipped behind `omarchy-hw-apple-silicon` |
