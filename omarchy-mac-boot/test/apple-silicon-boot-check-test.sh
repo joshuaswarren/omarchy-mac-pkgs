@@ -552,6 +552,7 @@ pass "a stale kernel, initramfs, GRUB entry or m1n1 image, disabled m1n1 updates
 # A package-owned overlay: update-m1n1 applies it to the kernel's device trees
 # (dtb-overlays.sh), and the rebuild applies it the same way.
 system linux-aurora
+cp "$ROOT/files/etc/default/update-m1n1" "$root/etc/default/update-m1n1"
 mkdir -p "$root/usr/lib/omarchy-mac-boot/dtb-overlays/t8103"
 printf 'overlay\n' >"$root/usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo"
 printf '/usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo omarchy-ane\n' >"$test_tmp/files/owners"
@@ -581,11 +582,24 @@ printf 'DTBS="%s"\n' "${dtbs[*]}" >"$root/etc/default/update-m1n1"
 write_boot_bin "${dtbs[@]}"
 run_check --boot-chain
 expect_pass "an administrator's DTBS, which update-m1n1 builds without the overlays"
+# An edited configuration kept over the packaged one's .pacnew, and no
+# configuration at all: update-m1n1 never applies the overlays, nor does the rebuild.
+printf 'export LC_ALL=C\n# dtb_overlays_update_m1n1\n' >"$root/etc/default/update-m1n1"
+for config in edited missing; do
+  [[ $config == "edited" ]] || rm "$root/etc/default/update-m1n1"
+  run_check --boot-chain
+  expect_pass "an m1n1 image built without the overlays, with the configuration $config"
+  grep -Fq "does not apply the device tree overlays" "$test_tmp/err" ||
+    fail "the check says the $config configuration leaves the overlays out" "$(cat "$test_tmp/err")"
+done
+cp "$ROOT/files/etc/default/update-m1n1" "$root/etc/default/update-m1n1"
+run_check --boot-chain
+expect_fail "an m1n1 image built without the overlays the packaged configuration applies" "m1n1/boot.bin on the system ESP (/boot/efi) is not m1n1"
 rm "$root/etc/default/update-m1n1"
 : >"$test_tmp/files/owners"
 run_check --boot-chain
 expect_fail "an overlay no package owns" "device tree overlay /usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo is not owned by a package"
-pass "package-owned device tree overlays are rebuilt into m1n1 stage 2, and an unowned one fails"
+pass "package-owned device tree overlays are rebuilt into m1n1 stage 2 where the configuration applies them, and an unowned one fails"
 
 # update-m1n1's defaults: := fills unset and empty settings alike.
 for config in '' 'DTBS=\nSOURCE=""\n' 'CONFIG=\nM1N1=\nU_BOOT=\n' 'M1N1_UPDATE_DISABLED=\n'; do
