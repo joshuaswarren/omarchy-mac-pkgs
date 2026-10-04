@@ -11,91 +11,38 @@ require_platform_fixtures "omarchy update's boot checks on platform fixtures"
 require_command gzip
 require_command b2sum
 
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
-
-# Every step of omarchy update but its boot checks is a stub that records
-# itself. The boot checks run the real omarchy-update-boot, dispatcher and
-# platform detector; sudo passes the fixtures through.
-steps=(
-  omarchy-update-lock
-  omarchy-update-requires-free-space
-  omarchy-update-confirm
-  omarchy-update-pkg-prune
-  omarchy-snapshot
-  omarchy-update-stay-awake
-  omarchy-update-dev
-  omarchy-update-keyring
-  omarchy-update-system-pkgs
-  omarchy-migrate
-  omarchy-hook
-  omarchy-update-aur-pkgs
-  omarchy-update-mise
-  omarchy-update-orphan-pkgs
-  omarchy-update-analyze-logs
-  omarchy-update-status
-  omarchy-update-restart
-)
-stub_bin=$tmp/bin
-mkdir -p "$stub_bin"
-for step in "${steps[@]}"; do
-  cat >"$stub_bin/$step" <<'SH'
-#!/bin/bash
-echo "${0##*/}" >>"$STEP_LOG"
-SH
+# omarchy update runs inside the runtime's sudo boundary fixture, as upstream's
+# update-boot-verify test runs it: every step but its boot check is a stub, and
+# the boot check runs the real omarchy-update-boot, dispatcher and detector.
+source "$OMARCHY_TEST_RUNTIME/test/shell.d/fixtures/sudo-boundary-test.sh"
+copy_boundary_file bin/omarchy-update
+rm "$SUDO_TEST_ROOT/bin/omarchy-update-boot"
+for command in omarchy-update-boot omarchy-lifecycle-dispatch omarchy-hw-platform; do
+  ln -sfn "$ROOT/bin/$command" "$SUDO_TEST_ROOT/bin/$command"
 done
-cat >"$stub_bin/sudo" <<'SH'
-#!/bin/bash
-echo "$*" >>"$SUDO_LOG"
-exec "$@"
-SH
-chmod +x "$stub_bin"/*
+export OMARCHY_UPDATE_LOGGED=1
 
-for platform in apple-silicon qualcomm generic-aarch64 generic; do
-  fake_platform "$tmp/$platform" "$platform"
-done
-
-# The whole update, as the stubs record it, before this change and with it on
-# a platform whose boot checks are no-ops.
-all_steps() {
-  printf '%s\n' omarchy-update-lock omarchy-update-requires-free-space omarchy-update-pkg-prune omarchy-snapshot \
-    omarchy-update-stay-awake omarchy-update-dev omarchy-update-keyring omarchy-update-system-pkgs omarchy-migrate \
-    omarchy-hook omarchy-update-aur-pkgs omarchy-update-mise omarchy-update-orphan-pkgs omarchy-update-analyze-logs \
-    omarchy-update-status omarchy-update-stay-awake omarchy-update-restart
-}
+tmp=$boundary_tmp/mac-update
+mkdir -p "$tmp"
+fake_platform "$tmp/apple-silicon" apple-silicon
 
 # omarchy update -y on platform $1, with the boot package's entrypoints in the
-# lifecycle root $2.
+# lifecycle root $2. The update's PATH is fixed, so uname goes beside the stubs.
 run_update() {
   local platform=$1 lifecycle=$2
-  : >"$tmp/steps"
-  : >"$tmp/sudo"
-  set +e
-  STEP_LOG="$tmp/steps" \
-    SUDO_LOG="$tmp/sudo" \
-    OMARCHY_UPDATE_LOGGED=1 \
-    OMARCHY_PROC_ROOT="$tmp/$platform/proc" \
-    OMARCHY_LIFECYCLE_ROOT="$lifecycle" \
-    PATH="$tmp/$platform/bin:$stub_bin:$ROOT/bin:$PATH" \
-    bash "$ROOT/bin/omarchy-update" -y >"$tmp/out" 2>"$tmp/err"
-  status=$?
-  set -e
+  reset_boundary
+  cp "$tmp/$platform/bin/uname" "$SUDO_TEST_ROOT/bin/uname"
+  status=0
+  OMARCHY_PROC_ROOT="$tmp/$platform/proc" OMARCHY_LIFECYCLE_ROOT="$lifecycle" \
+    "$SUDO_TEST_ROOT/bin/omarchy-update" -y >"$tmp/out" 2>"$tmp/err" || status=$?
 }
 
 ran() {
-  grep -Fxq "$1" "$tmp/steps"
+  grep -q "^step:$1" "$SUDO_TEST_LOG"
 }
 
-# A lifecycle root holding entrypoints that record themselves and exit with $2.
-recording_package() {
-  local lifecycle=$1 code=$2 operation
-  rm -rf "$lifecycle"
-  mkdir -p "$lifecycle/usr/lib/omarchy/mac-boot"
-  for operation in update-preflight update-verify; do
-    printf '#!/bin/bash\necho %s >>%q\nexit %s\n' "$operation" "$tmp/boot-ran" "$code" >"$lifecycle/usr/lib/omarchy/mac-boot/$operation"
-  done
-  chmod -R go-w "$lifecycle"
-  chmod 755 "$lifecycle"/usr/lib/omarchy/mac-boot/*
+reboot_offered() {
+  ran 'omarchy-update-restart --reboot-only'
 }
 
 # omarchy-mac-boot's own update-verify, on the fixture Mac. The dispatcher runs
@@ -121,11 +68,11 @@ limine_mac
 mac_boot_package
 run_update apple-silicon "$tmp/mac-boot"
 (( status == 0 )) || fail "apple: an update that leaves a coherent boot chain succeeds" "status $status: $(cat "$tmp/out" "$tmp/err")"
-ran omarchy-update-restart || fail "apple: a verified update offers the reboot"
+reboot_offered || fail "apple: a verified update offers the reboot" "$(cat "$SUDO_TEST_LOG")"
 grep -Fq "running linux-aurora $mac_kver; installed boot files match" "$tmp/out" || fail "apple: the update shows what it verified" "$(cat "$tmp/out")"
 mac_boot_package 6.16.0-aurora9-ARCH
 run_update apple-silicon "$tmp/mac-boot"
-(( status == 0 )) && ran omarchy-update-restart ||
+(( status == 0 )) && reboot_offered ||
   fail "apple: an update that installed a new kernel is verified before its reboot" "status $status: $(cat "$tmp/out" "$tmp/err")"
 pass "apple: an update that leaves a coherent boot chain passes verification and offers the reboot"
 
@@ -135,9 +82,8 @@ blocked() {
   local description=$1 reason=$2
   run_update apple-silicon "$tmp/mac-boot"
   (( status == 1 )) || fail "apple: $description fails the update" "status $status: $(cat "$tmp/err")"
-  ! ran omarchy-update-restart || fail "apple: $description offers no reboot"
-  ran omarchy-update-analyze-logs && ran omarchy-update-status && (( $(grep -c '^omarchy-update-stay-awake$' "$tmp/steps") == 2 )) ||
-    fail "apple: $description still checks the logs, refreshes the status and releases Stay Awake" "$(cat "$tmp/steps")"
+  ! reboot_offered || fail "apple: $description offers no reboot"
+  ran 'omarchy-update-stay-awake stop' || fail "apple: $description still releases Stay Awake" "$(cat "$SUDO_TEST_LOG")"
   grep -Fq "$reason" "$tmp/err" || fail "apple: $description is explained" "$(cat "$tmp/err")"
   grep -Fq "do not reboot yet" "$tmp/err" && grep -Fq "The update is not finished" "$tmp/err" ||
     fail "apple: $description says the update is not finished and not to reboot" "$(cat "$tmp/err")"

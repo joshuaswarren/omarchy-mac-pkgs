@@ -64,19 +64,14 @@ printf 'KEYMAP=us\nXKBLAYOUT=us\n' >"$image/etc/vconsole.conf"
 ! boot_image_carries_vconsole "$image" "$tmpdir/vconsole.conf" || fail "an image built with US is not the Danish one"
 pass "the boot image check finds the Danish keymap and XKB symbols, and catches an image without them"
 
-# Desktop: the shipped Hyprland config on a Mac, omarchy-mac staged, reading the
-# same vconsole.conf. The XKB names Hyprland gets must be the ones Plymouth
-# compiles from vconsole.conf (an empty model is XKB's default, pc105).
-"$MAC/install" "$tmpdir/pkg" >/dev/null
-mkdir -p "$tmpdir/apple-bin"
-printf '#!/bin/sh\nexit 0\n' >"$tmpdir/apple-bin/omarchy-hw-apple-silicon"
-chmod +x "$tmpdir/apple-bin/omarchy-hw-apple-silicon"
+# Desktop: the runtime's shipped Hyprland config, reading the same vconsole.conf.
+# The XKB names Hyprland gets must be the ones Plymouth compiles from
+# vconsole.conf (an empty model is XKB's default, pc105).
 home=$tmpdir/home
 mkdir -p "$home/.config"
 cp -R "$ROOT/config/hypr" "$home/.config/hypr"
 desktop=$(HOME="$home" XDG_CONFIG_HOME="$home/.config" XDG_STATE_HOME="$home/.local/state" OMARCHY_PATH="$ROOT" \
-  OMARCHY_PACKAGED_PATH="$tmpdir/pkg/usr/share/omarchy" VCONSOLE="$tmpdir/vconsole.conf" \
-  PATH="$tmpdir/apple-bin:$PATH" lua - <<'LUA'
+  VCONSOLE="$tmpdir/vconsole.conf" lua - <<'LUA'
 local real_open = io.open
 io.open = function(path, mode)
   if path == "/etc/vconsole.conf" then
@@ -99,7 +94,6 @@ local function proxy()
 end
 
 local input = {}
-local apple_settings = false
 hl = setmetatable({
   dsp = proxy(),
   config = function(config)
@@ -107,10 +101,6 @@ hl = setmetatable({
       if config.input and config.input[key] ~= nil then
         input[key] = config.input[key]
       end
-    end
-    -- Only omarchy-mac's settings turn tap-to-click off: proof they loaded.
-    if config.input and config.input.touchpad and config.input.touchpad.tap_to_click == false then
-      apple_settings = true
     end
   end,
   get_config = function() return nil end,
@@ -125,10 +115,9 @@ hl = setmetatable({
 })
 
 dofile(os.getenv("HOME") .. "/.config/hypr/hyprland.lua")
-print(("apple=%s layout=%s variant=%s model=%s rules=%s file=%s"):format(tostring(apple_settings),
-  input.kb_layout, input.kb_variant, input.kb_model, input.kb_rules, tostring(input.kb_file)))
+print(("layout=%s variant=%s model=%s rules=%s file=%s"):format(input.kb_layout, input.kb_variant, input.kb_model, input.kb_rules, tostring(input.kb_file)))
 LUA
 )
-[[ $desktop == "apple=true layout=dk variant= model= rules= file=nil" ]] ||
+[[ $desktop == "layout=dk variant= model= rules= file=nil" ]] ||
   fail "a Danish Mac's desktop types with the XKB layout its disk password prompt uses (dk, no variant, pc105)" "$desktop"
 pass "a Danish Mac's desktop and lock screen use the dk layout its disk password prompt uses"

@@ -39,8 +39,8 @@ for platform in apple-silicon generic; do
 done
 limine_mac_init "$tmp/mac"
 
-# sudo, snapper and the GRUB-era restore record themselves; the omarchy-mac-boot
-# commands are the package's own, with omarchy-mac-limine-active recorded.
+# sudo records itself and snapper is a stub; the omarchy-mac-boot commands are
+# the package's own, with omarchy-mac-limine-active recorded.
 common=$tmp/common
 mkdir -p "$common" "$tmp/limine" "$tmp/hooks/pre.d" "$tmp/hooks/post.d" "$tmp/no-hooks/pre.d" "$tmp/no-hooks/post.d"
 cat >"$common/sudo" <<'SH'
@@ -50,7 +50,6 @@ exec "$@"
 SH
 printf '#!/bin/bash\nexit 0\n' >"$common/snapper"
 printf '#!/bin/bash\nexit 0\n' >"$common/limine-update"
-printf '#!/bin/bash\necho "omarchy-system-snapshot-restore $*" >>"$CALLS"\n' >"$common/omarchy-system-snapshot-restore"
 cat >"$common/omarchy-mac-limine-active" <<SH
 #!/bin/bash
 echo omarchy-mac-limine-active >>"\$CALLS"
@@ -147,26 +146,18 @@ run_restore() {
   (( status != 124 && status != 137 )) || fail "the restore finishes within a minute" "$(cat "$tmp/out" "$tmp/err")"
 }
 
-# x86: exactly as before, and nothing asks whether a Mac boots Limine.
+# x86: the package's hooks are installed but let the restore through untouched,
+# and nothing asks whether a Mac boots Limine.
 limine_mac
-run_restore generic limine
-(( status == 0 )) && [[ $(cat "$tmp/calls") == $'sudo limine-snapper-restore\nrestored' ]] ||
-  fail "x86 with Limine restores with limine-snapper-restore" "$(cat "$tmp/calls" "$tmp/err")"
-run_restore generic none
-(( status == 0 )) && [[ $(cat "$tmp/calls") == $'sudo omarchy-system-snapshot-restore\nomarchy-system-snapshot-restore ' ]] ||
-  fail "x86 without limine-snapper-sync swaps the root subvolume" "$(cat "$tmp/calls" "$tmp/err")"
+run_restore generic limine "$tmp/hooks"
+(( status == 0 )) && [[ $(cat "$tmp/calls") == $'sudo limine-snapper-restore\nrestored' ]] && grep -Fq "Reboot now" "$tmp/out" ||
+  fail "x86 restores with limine-snapper-restore through the Mac hooks" "$(cat "$tmp/calls" "$tmp/out" "$tmp/err")"
 pass "x86 restores as before, without any Mac check"
 
-# A Mac that boots GRUB has limine-snapper-sync installed but not in use.
+# A snapshot boot came from Limine's menu, even of a snapshot from before
+# Limine, when the Mac booted GRUB: Limine's restore hook says why it can't.
 limine_mac
 rm "$mac_root/var/lib/omarchy/limine.enabled"
-TEST_CMDLINE=$live_cmdline run_restore apple-silicon limine "$tmp/hooks"
-(( status == 0 )) && grep -Fxq 'sudo omarchy-system-snapshot-restore' "$tmp/calls" && ! grep -q 'limine-snapper-restore\|restored' "$tmp/calls" ||
-  fail "a GRUB Mac restores with the subvolume swap, never limine-snapper-restore" "$(cat "$tmp/calls" "$tmp/err")"
-pass "a Mac that boots GRUB uses the GRUB-era restore"
-
-# A snapshot boot came from Limine's menu, even of a snapshot from before
-# Limine: that restore is Limine's, whose hook says why it cannot go ahead.
 run_restore apple-silicon limine "$tmp/hooks"
 (( status != 0 )) && grep -Fxq 'sudo limine-snapper-restore' "$tmp/calls" && ! grep -Fxq restored "$tmp/calls" &&
   grep -Fq "Snapshot 7 was taken before Limine was activated on this Mac" "$tmp/err" ||
@@ -179,7 +170,6 @@ limine_mac
 run_restore apple-silicon limine "$tmp/hooks"
 (( status == 0 )) && grep -Fxq 'sudo limine-snapper-restore' "$tmp/calls" && grep -Fxq restored "$tmp/calls" ||
   fail "a Limine Mac restores a matching snapshot with limine-snapper-restore" "$(cat "$tmp/calls" "$tmp/out" "$tmp/err")"
-! grep -q 'omarchy-system-snapshot-restore' "$tmp/calls" || fail "a Limine Mac never runs the GRUB-era restore"
 grep -Fq "Snapshot 7 matches this Mac's boot files" "$tmp/out" || fail "the restore says the snapshot was checked" "$(cat "$tmp/out")"
 pass "a Limine Mac restores a snapshot that matches its boot files through limine-snapper-restore"
 
@@ -225,73 +215,12 @@ LSS_PICK=$tmp/picked run_restore apple-silicon limine "$tmp/hooks"
   fail "a matching snapshot picked from the list is restored and offered the reboot" "$(cat "$tmp/out" "$tmp/err")"
 pass "a matching snapshot picked from limine-snapper-restore's list is restored"
 
-# The GRUB-era restore itself: refused on a Limine Mac before anything else,
-# while a GRUB Mac and x86 reach its usual checks.
-run_swap_restore() {
-  local platform=$1
-  set +e
-  (
-    export PATH="$tmp/$platform/bin:$common:$ROOT/bin:$BOOT/bin:$PATH"
-    export CALLS="$tmp/calls" OMARCHY_PROC_ROOT="$tmp/$platform/proc"
-    export OMARCHY_LIMINE_GATE="$mac_root/var/lib/omarchy/limine.enabled" OMARCHY_LIMINE_DEFAULT="$mac_root/etc/default/limine"
-    printf '%s\n' "${TEST_CMDLINE:-$live_cmdline}" >"$tmp/cmdline"
-    export OMARCHY_CMDLINE="$tmp/cmdline"
-    guarded bash "$ROOT/bin/omarchy-system-snapshot-restore" </dev/null
-  ) >"$tmp/out" 2>"$tmp/err"
-  status=$?
-  set -e
-  (( status != 124 && status != 137 )) || fail "the restore finishes within a minute" "$(cat "$tmp/out" "$tmp/err")"
-}
+# KNOWN INCOMPATIBILITY with #13362: its restore always runs limine-snapper-restore
+# and has no subvolume swap (omarchy-system-snapshot-restore), yet omarchy-mac-boot's
+# pre hook refuses a GRUB Mac and sends it back to omarchy-snapshot restore for one.
 limine_mac
-run_swap_restore apple-silicon
-(( status != 0 )) && grep -Fq "this Mac boots Limine" "$tmp/err" && grep -Fq "Snapshots in the Limine menu" "$tmp/err" ||
-  fail "the subvolume swap refuses a Limine Mac" "$(cat "$tmp/err")"
 rm "$mac_root/var/lib/omarchy/limine.enabled"
-run_swap_restore apple-silicon
-grep -Fq "run as root" "$tmp/err" || fail "a GRUB Mac reaches the subvolume swap" "$(cat "$tmp/err")"
-TEST_CMDLINE=$snapshot_cmdline run_swap_restore apple-silicon
-(( status != 0 )) && grep -Fq "a snapshot boot cannot be restored by swapping the root subvolume; reboot into the current system first" "$tmp/err" ||
-  fail "the subvolume swap refuses a Mac's snapshot boot with why" "$(cat "$tmp/err")"
-run_swap_restore generic
-grep -Fq "run as root" "$tmp/err" && ! grep -Fq Limine "$tmp/err" || fail "x86 reaches the subvolume swap as before" "$(cat "$tmp/err")"
-TEST_CMDLINE=$snapshot_cmdline run_swap_restore generic
-grep -Fq "run as root" "$tmp/err" && ! grep -Fq Limine "$tmp/err" || fail "x86 in a snapshot boot reaches the subvolume swap as before" "$(cat "$tmp/err")"
-pass "the GRUB-era restore runs only where Limine does not boot the Mac, and never from a Mac's snapshot boot"
-
-# On a GRUB Mac the swap restores only a snapshot root carrying the kernel on
-# /boot: GRUB boots that kernel with the restored root's modules.
-snapshot_root() {
-  local modules=$tmp/tree/usr/lib/modules/$mac_kver
-  rm -rf "$tmp/tree"
-  mkdir -p "$modules"
-  printf '%s\n' "$1" >"$modules/vmlinuz"
-  printf 'linux-aurora\n' >"$modules/pkgbase"
-  : >"$modules/modules.dep"
-}
-swap_check() {
-  local path=$1
-  set +e
-  (
-    eval "$(limine_mac_env "$path")"
-    export PATH="$path:$PATH" OMARCHY_PROC_ROOT="$tmp/apple-silicon/proc" OMARCHY_BOOT_DIR="$mac_root/boot"
-    guarded bash -c 'source "$1"; apple_snapshot_matches_boot "$2"' _ "$ROOT/bin/omarchy-system-snapshot-restore" "$tmp/tree"
-  ) >"$tmp/out" 2>"$tmp/err"
-  status=$?
-  set -e
-  (( status != 124 && status != 137 )) || fail "the restore finishes within a minute" "$(cat "$tmp/out" "$tmp/err")"
-}
-limine_mac
-with_boot=$tmp/apple-silicon/bin:$common:$ROOT/bin:$BOOT/bin
-snapshot_root "linux-aurora kernel $mac_kver"
-swap_check "$with_boot"
-(( status == 0 )) || fail "a snapshot with the kernel on /boot is swapped in" "$(cat "$tmp/err")"
-snapshot_root "linux-aurora kernel 6.16.0-aurora0-ARCH"
-swap_check "$with_boot"
-(( status != 0 )) && grep -Fq "not the linux-aurora kernel on the boot partition" "$tmp/err" ||
-  fail "a snapshot with another kernel is refused and explained" "$(cat "$tmp/err")"
-swap_check "$tmp/apple-silicon/bin:$common:$ROOT/bin"
-(( status != 0 )) && grep -Fq "omarchy-mac-boot is not installed" "$tmp/err" ||
-  fail "without omarchy-mac-boot the snapshot cannot be checked, so it is refused" "$(cat "$tmp/err")"
-grep -Fq 'if (( apple )) && ! apple_snapshot_matches_boot "$TOP/$source_path"; then' "$ROOT/bin/omarchy-system-snapshot-restore" ||
-  fail "the swap checks the chosen snapshot on a Mac"
-pass "a GRUB Mac swaps in only a snapshot carrying the kernel on /boot"
+TEST_CMDLINE=$live_cmdline run_restore apple-silicon limine "$tmp/hooks"
+(( status == 0 )) && grep -Fxq 'sudo omarchy-system-snapshot-restore' "$tmp/calls" && ! grep -q 'limine-snapper-restore\|restored' "$tmp/calls" ||
+  fail "a GRUB Mac restores with the subvolume swap, never limine-snapper-restore" "$(cat "$tmp/calls" "$tmp/err")"
+pass "a Mac that boots GRUB uses the GRUB-era restore"

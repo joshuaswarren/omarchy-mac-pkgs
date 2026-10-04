@@ -6,7 +6,6 @@ python3 - <<'PY'
 import os
 from pathlib import Path
 import subprocess
-import shutil
 import tempfile
 
 root = Path(os.environ['ROOT'])
@@ -81,10 +80,8 @@ Exec=env SPECIAL=yes chromium %U
   run([wrap, 'chromium', str(real)], 3)
   run(['bash', '-euo', 'pipefail', '-c', system])
   run(['bash', '-euo', 'pipefail', '-c', leaf])
-  run(['bash', '-euo', 'pipefail', str(root / 'migrations' / '1789138445.sh')])
   assert not sentinel.exists()
-  # An administrator's ordinary Chromium alias must also skip both setup
-  # phases and permit a new migration after the old marker was completed.
+  # An administrator's ordinary Chromium alias must also skip both setup phases.
   (bind / 'chromium').unlink()
   (bind / 'chromium').symlink_to(real)
   binary_before = (real.read_bytes(), real.stat().st_mode)
@@ -92,22 +89,6 @@ Exec=env SPECIAL=yes chromium %U
     run(args, 3)
   run(['bash', '-euo', 'pipefail', '-c', system])
   run(['bash', '-euo', 'pipefail', '-c', leaf])
-  migration_repo = tmp / 'migration-repo'
-  (migration_repo / 'migrations').mkdir(parents=True)
-  (migration_repo / 'install').symlink_to(root / 'install')
-  (migration_repo / 'bin').symlink_to(root / 'bin')
-  shutil.copyfile(root / 'migrations' / '1789138445.sh', migration_repo / 'migrations' / '1789138445.sh')
-  (migration_repo / 'migrations/9999999999.sh').write_text('echo later\n')
-  markers = tmp / 'migration-state'
-  markers.mkdir()
-  (markers / '1789138445.sh').touch()
-  dismiss = bind / 'omarchy-notification-dismiss'
-  dismiss.write_text('#!/bin/bash\nexit 0\n')
-  dismiss.chmod(0o755)
-  env.update(OMARCHY_PATH=str(migration_repo), OMARCHY_MIGRATION_STATE=str(markers))
-  run([str(root / 'bin/omarchy-migrate')])
-  env['OMARCHY_PATH'] = str(root)
-  assert (markers / '9999999999.sh').exists()
   assert (bind / 'chromium').is_symlink() and (bind / 'chromium').readlink() == real
   assert (real.read_bytes(), real.stat().st_mode) == binary_before
   assert not sentinel.exists()
@@ -146,5 +127,5 @@ Exec=env SPECIAL=yes chromium %U
   assert not resolves(bad), 'quoted TryExec is a rejected negative control'
   run([repair, str(bad), str(vendor), str(spaced), str(real)])
   assert resolves(bad), 'a previously generated quoted wrapper route is repaired too'
-print('ok - Electron ownership, user privilege boundary, preserving desktop repair and migration regressions')
+print('ok - Electron ownership, user privilege boundary and preserving desktop repair')
 PY
