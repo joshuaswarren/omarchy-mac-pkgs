@@ -575,6 +575,13 @@ expect_pass "an m1n1 image update-m1n1 built with the overlaid device tree"
 run_check
 expect_pass "an m1n1 image with the overlaid device tree, in the full check"
 [[ -z $(ls -A "$root/run") ]] || fail "the rebuild writes the overlaid device tree only to its own work directory"
+# A DTBS the administrator set: update-m1n1 leaves the overlays out, and so
+# does the rebuild.
+printf 'DTBS="%s"\n' "${dtbs[*]}" >"$root/etc/default/update-m1n1"
+write_boot_bin "${dtbs[@]}"
+run_check --boot-chain
+expect_pass "an administrator's DTBS, which update-m1n1 builds without the overlays"
+rm "$root/etc/default/update-m1n1"
 : >"$test_tmp/files/owners"
 run_check --boot-chain
 expect_fail "an overlay no package owns" "device tree overlay /usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo is not owned by a package"

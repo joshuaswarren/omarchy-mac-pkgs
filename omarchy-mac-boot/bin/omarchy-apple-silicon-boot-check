@@ -605,6 +605,8 @@ if [[ -e $config_file ]]; then
     esac
   done <"$workdir/config"
 fi
+# dtb-overlays.sh leaves a DTBS the administrator set alone, overlays and all.
+config_dtbs=$DTBS
 [[ -z $disabled ]] || (( boot_chain )) ||
   fail "M1N1_UPDATE_DISABLED is set in /etc/default/update-m1n1, so m1n1 does not follow the kernel and its device trees cannot be vouched for; remove it, run sudo update-m1n1, then omarchy update"
 
@@ -699,7 +701,9 @@ if (( ${#overlays[@]} )); then
     pacman -Qoq "${overlay#"$root"}" >/dev/null 2>&1 ||
       fail "device tree overlay ${overlay#"$root"} is not owned by a package"
   done
-  if ! dtb_overlays_supported "$script"; then
+  if [[ -n $config_dtbs ]]; then
+    echo "Apple Silicon boot check: warning: DTBS is set in /etc/default/update-m1n1, so update-m1n1 leaves the device tree overlays out" >&2
+  elif ! dtb_overlays_supported "$script"; then
     echo "Apple Silicon boot check: warning: /usr/bin/update-m1n1 has a DTBS default the device tree overlays do not follow, so it leaves them out" >&2
   elif ! dtb_overlays_tools; then
     echo "Apple Silicon boot check: warning: device tree overlays are installed, but update-m1n1 leaves them out without dtc 1.7.1 or newer (dtc, fdtoverlay and fdtget); install or update dtc" >&2
