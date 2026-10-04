@@ -6,5 +6,5 @@ trap 'rm -rf "$work"' EXIT
 stage="$work/root"
 "$ROOT/install" "$stage"
 
-! grep -rqs hid_apple "$stage/usr/lib/modprobe.d" || fail 'the package ships no hid_apple option'
-pass 'the package leaves hid_apple at the kernel default, so any owner option wins'
+[[ -d $stage/usr/lib/modprobe.d ]] && ! grep -rqs hid_apple "$stage/usr/lib/modprobe.d" || fail 'the package ships no hid_apple option'
+pass 'the package ships no hid_apple option, so the kernel default applies'
