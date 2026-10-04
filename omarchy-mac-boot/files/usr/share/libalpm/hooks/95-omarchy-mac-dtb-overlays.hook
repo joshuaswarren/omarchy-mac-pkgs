@@ -6,7 +6,7 @@ Type = Path
 Operation = Install
 Operation = Upgrade
 Operation = Remove
-Target = usr/share/omarchy-platform/dtb-overlays/*
+Target = usr/lib/omarchy-mac-boot/dtb-overlays/*/*.dtbo
 
 [Action]
 Description = Updating m1n1 image for device tree overlays...

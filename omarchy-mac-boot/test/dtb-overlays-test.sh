@@ -17,7 +17,7 @@ root=$tmp/root
 export OMARCHY_DTB_OVERLAYS_ROOT=$root
 kver=7.1.12-2-11-ARCH
 dtbs=$root/lib/modules/$kver/dtbs
-overlays=$root/usr/share/omarchy-platform/dtb-overlays
+overlays=$root/usr/lib/omarchy-mac-boot/dtb-overlays
 mkdir -p "$dtbs" "$overlays" "$root/usr/bin" "$root/run" "$tmp/out"
 
 # A board device tree: its board and SoC compatibles and one /soc node.
@@ -168,13 +168,13 @@ pass "a board prefix names one board"
 overlay t6001 opt apple,t6000-ane "" /soc ane-t6001
 mapfile -t result < <(dtb_overlays_apply "$tmp/out" "${stock[@]}")
 [[ ${result[0]} == "$dtbs/t6001-j316c.dtb" ]] || fail "an opt-in overlay stays out until the owner opts in"
-mkdir -p "$root/etc/omarchy-platform"
-printf 'other\nane-t6001\n' >"$root/etc/omarchy-platform/dtb-overlays.opt-in"
+mkdir -p "$root/etc/omarchy-mac-boot"
+printf 'other\nane-t6001\n' >"$root/etc/omarchy-mac-boot/dtb-overlays.opt-in"
 mapfile -t result < <(dtb_overlays_apply "$tmp/out" "${stock[@]}")
 [[ ${result[0]} == "$tmp/out/t6001-j316c.dtb" ]] ||
-  fail "an opt-in overlay applies once its name is a line of /etc/omarchy-platform/dtb-overlays.opt-in"
+  fail "an opt-in overlay applies once its name is a line of /etc/omarchy-mac-boot/dtb-overlays.opt-in"
 has_ane "${result[0]}" apple,t6000-ane || fail "the opted-in overlay's node is in the device tree"
-rm -f "$overlays/t6001/opt.dtbo" "$root/etc/omarchy-platform/dtb-overlays.opt-in" "$tmp/out"/*
+rm -f "$overlays/t6001/opt.dtbo" "$root/etc/omarchy-mac-boot/dtb-overlays.opt-in" "$tmp/out"/*
 pass "an opt-in overlay applies only after the owner opts in"
 
 overlay t8103-j293 zz-broken apple,t8103-extra "" /soc/missing@0

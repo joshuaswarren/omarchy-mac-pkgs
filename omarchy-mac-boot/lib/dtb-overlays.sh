@@ -2,7 +2,7 @@
 # Package-owned device tree overlays for m1n1 stage 2 (sh with local).
 #
 # A package that adds hardware support the kernel's device trees lack ships a
-# compiled overlay as /usr/share/omarchy-platform/dtb-overlays/PREFIX/NAME.dtbo.
+# compiled overlay as /usr/lib/omarchy-mac-boot/dtb-overlays/PREFIX/NAME.dtbo.
 # It applies to every device tree whose file name is PREFIX.dtb or starts with
 # PREFIX- ("t8103" covers every M1 board, "t6001-j316c" one board). A device
 # tree takes its overlays in C order of PREFIX/NAME. An overlay whose root node
@@ -11,7 +11,7 @@
 # of_device_is_available(): no status, "okay" or "ok"), so a kernel that gains
 # the node wins. An overlay whose root node has the string "omarchy,opt-in"
 # applies only when that string is a line of
-# /etc/omarchy-platform/dtb-overlays.opt-in: the owner's choice for hardware
+# /etc/omarchy-mac-boot/dtb-overlays.opt-in: the owner's choice for hardware
 # whose driver must not start by default. When an overlay does not apply, or
 # dtc cannot read the result, that device tree stays as the kernel shipped it.
 # With no overlays, nothing changes.
@@ -24,7 +24,7 @@
 # boot check's root).
 
 dtb_overlays_dir() {
-  printf '%s\n' "${OMARCHY_DTB_OVERLAYS_ROOT:-}/usr/share/omarchy-platform/dtb-overlays"
+  printf '%s\n' "${OMARCHY_DTB_OVERLAYS_ROOT:-}/usr/lib/omarchy-mac-boot/dtb-overlays"
 }
 
 # The overlays, one path per line, in the order they apply.
@@ -92,7 +92,7 @@ dtb_overlays_has_compatible() {
 # applies to it. Returns 1, and writes nothing, when none applies or one fails.
 dtb_overlays_build() {
   local dtb="$1" out="$2" overlays="$3" name="${1##*/}" applied=0 overlay prefix skip compatible key
-  local opt_in="${OMARCHY_DTB_OVERLAYS_ROOT:-}/etc/omarchy-platform/dtb-overlays.opt-in"
+  local opt_in="${OMARCHY_DTB_OVERLAYS_ROOT:-}/etc/omarchy-mac-boot/dtb-overlays.opt-in"
   cp -- "$dtb" "$out.base" || return 1
   for overlay in $overlays; do
     prefix=${overlay%/*}
