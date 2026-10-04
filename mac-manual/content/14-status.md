@@ -4,13 +4,13 @@ description: Where the Apple Silicon stack stands, and what is deliberately left
 section: Reference
 ---
 
-This manual describes the stack the first release installs. It is being built on the `quattro-upstream` branch of omarchy-mac, following [the convergence spec](https://github.com/omacom/omarchy-mac/blob/quattro-upstream/docs/apple-silicon-convergence.md). Until that release, read every page as the target, not as something you can install today.
+This manual describes the stack the first release installs. The packages are built here, in omacom/omarchy-mac-pkgs, against the Omarchy of [omacom/omarchy#13362](https://github.com/omacom/omarchy/pull/13362), following [the convergence spec](https://github.com/omacom/omarchy-mac/blob/quattro-upstream/docs/apple-silicon-convergence.md). Until that release, read every page as the target, not as something you can install today.
 
 ## Order of work
 
 1. The installer app on omacom/omarchy-mac-installer reaches parity with the last qualified Apple Silicon installer.
 2. The Mac packages (`omarchy-mac`, `omarchy-mac-boot`, `linux-aurora`, `m1n1-aurora`, `uboot-asahi` and the carried aquamarine) land on Omarchy's `edge` channel, aarch64 only.
-3. The first test images built from `quattro-upstream` are installed on the M2 Max, then on the M1 Pro.
+3. The first test images, built from omarchy-mac's `quattro-upstream` before the packages moved here, are installed on the M2 Max, then on the M1 Pro.
 4. The remaining Mac features move behind the platform detector and dispatch points: audio, Wi-Fi resume, display, video decode, the encryption lifecycle, snapshots and boot verification.
 5. The generic changes are proposed to omacom/omarchy, in order: the platform detector and profiles; composable boot configuration and generic encryption fixes; the dispatch interface.
 6. The move for existing Macs, a standalone migration script outside the packages, is built and tested for each kind of install.
