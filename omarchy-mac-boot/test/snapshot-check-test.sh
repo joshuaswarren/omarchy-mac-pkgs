@@ -87,16 +87,28 @@ run_check() {
   set +e
   (
     eval "$(limine_mac_env "$ROOT/bin" "${TEST_UNAME:-}")"
-    local detector=$tmp/detector dir
+    local detector=$tmp/detector dir mirror entry
     local -a kept=() dirs=()
     [[ -z ${TEST_NO_DETECTOR:-} ]] || detector=$tmp/no-detector
     export PATH="${TEST_PATH_FIRST:-$fake}:$fake:$detector:$PATH"
-    # A root without the detector must not find one further down PATH, such
-    # as the runtime's bin/ when the suite runs with OMARCHY_PATH/bin first.
+    # A root without the detector must not find one further down PATH, as in
+    # the runtime's bin/ or an installed Omarchy's /usr/bin. Such a directory
+    # gives way to a mirror of everything else in it.
     if [[ -n ${TEST_NO_DETECTOR:-} ]]; then
       IFS=: read -r -a dirs <<<"$PATH"
       for dir in "${dirs[@]}"; do
-        [[ -e $dir/omarchy-hw-platform ]] || kept+=("$dir")
+        if [[ -e $dir/omarchy-hw-platform ]]; then
+          mirror=$tmp/without-detector/${dir//\//_}
+          if [[ ! -d $mirror ]]; then
+            mkdir -p "$mirror"
+            for entry in "$dir"/*; do
+              [[ ${entry##*/} == "omarchy-hw-platform" ]] || ln -s "$entry" "$mirror/"
+            done
+          fi
+          kept+=("$mirror")
+        else
+          kept+=("$dir")
+        fi
       done
       PATH=$(IFS=:; printf '%s' "${kept[*]}")
     fi
