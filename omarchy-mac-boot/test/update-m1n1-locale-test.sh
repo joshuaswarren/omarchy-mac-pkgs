@@ -38,7 +38,7 @@ utf8_order=$(printf '%s\n' "${names[@]}" | LC_ALL=$utf8_locale sort)
 update_m1n1_order() {
   local defaults=$1
   shift
-  env "$@" sh -c '
+  env "$@" OMARCHY_DTB_OVERLAYS=0 sh -c '
     [ -z "$1" ] || . "$1"
     : ${DTBS:="$2/*.dtb"}
     cat $DTBS
@@ -54,8 +54,9 @@ update_m1n1_order() {
 pass "update-m1n1 concatenates device trees in C order under any caller locale"
 
 # The file only sets the locale: every input update-m1n1 and the boot check
-# read from it keeps its default.
-set_by_config=$(env -i PATH=/usr/bin:/bin bash --noprofile --norc -c '
+# read from it keeps its default. OMARCHY_DTB_OVERLAYS=0, as the boot check
+# reads it, keeps the host's own overlays out of this test.
+set_by_config=$(env -i PATH=/usr/bin:/bin OMARCHY_DTB_OVERLAYS=0 bash --noprofile --norc -c '
   unset DTBS SOURCE M1N1 U_BOOT CONFIG TARGET M1N1_UPDATE_DISABLED
   . "$1" >/dev/null 2>&1 || exit 1
   for name in DTBS SOURCE M1N1 U_BOOT CONFIG TARGET M1N1_UPDATE_DISABLED; do

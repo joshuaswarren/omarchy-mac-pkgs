@@ -64,3 +64,23 @@ for dropin in "$ROOT"/files/etc/mkinitcpio.conf.d/*.conf; do
   grep -Fxq "Target = etc/mkinitcpio.conf.d/${dropin##*/}" "$hook" || fail "the ALPM hook matches ${dropin##*/}"
 done
 pass "the ALPM hook rebuilds the initramfs for every shipped drop-in"
+
+# The device tree overlay directory is this package's, empty, for other
+# packages to drop overlays into. Its hook fires on an overlay, never on the
+# directory alone, so upgrading this package does not rebuild m1n1 stage 2.
+overlays=usr/lib/omarchy-mac-boot/dtb-overlays
+[[ -d $stage/$overlays && -z $(ls -A "$stage/$overlays") && $(stat -c %a "$stage/$overlays") == 755 ]] ||
+  fail "the empty overlay directory is staged"
+hook=$ROOT/files/usr/share/libalpm/hooks/95-omarchy-mac-dtb-overlays.hook
+target=$(sed -n 's/^Target = //p' "$hook")
+[[ $target == "$overlays/*/*.dtbo" ]] || fail "the overlay hook targets the overlays: $target"
+# pacman matches hook targets with fnmatch(3) and no flags: * crosses slashes.
+for path in "$overlays/t8103/omarchy-ane.dtbo" "$overlays/t6001-j316c/omarchy-ane.dtbo"; do
+  # shellcheck disable=SC2053 # the target is a pattern
+  [[ $path == $target ]] || fail "the overlay hook fires on $path"
+done
+for path in "$overlays/" "$overlays/t8103/" usr/lib/omarchy-mac/boot/dtb-overlays.sh; do
+  # shellcheck disable=SC2053
+  [[ $path != $target ]] || fail "the overlay hook ignores $path"
+done
+pass "the package owns the empty overlay directory, and its hook fires on overlays only"
