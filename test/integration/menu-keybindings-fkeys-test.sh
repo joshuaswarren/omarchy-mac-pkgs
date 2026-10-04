@@ -102,9 +102,12 @@ ALT + XF86MonBrightnessUp → Brightness up precise	exec	omarchy-brightness-disp
 SUPER + Q → Close window	killactive
 EOF
 
-# omarchy-mac names the keys (default/omarchy/platform/key-names).
+# omarchy-mac names the keys in the platform root (key-names), which a copy of
+# the menu reads from the staged package.
 "$MAC/install" "$cache_dir/pkg" >/dev/null
-output=$(PATH="$mock_bin:$PATH" XDG_CACHE_HOME="$cache_dir" OMARCHY_PACKAGED_PATH="$cache_dir/pkg/usr/share/omarchy" "$ROOT/bin/omarchy-menu-keybindings" --print)
+ln -s "$cache_dir/pkg/usr/share/omarchy-platform" "$cache_dir/platform"
+platform_root_copy "$ROOT/bin/omarchy-menu-keybindings" "$mock_bin/omarchy-menu-keybindings" "$cache_dir/platform"
+output=$(PATH="$mock_bin:$PATH" XDG_CACHE_HOME="$cache_dir" "$mock_bin/omarchy-menu-keybindings" --print)
 
 tr -s ' ' <<<"$output" | grep -qF 'SHIFT + F2 → Keyboard brightness up' || \
   fail "SHIFT + XF86MonBrightnessUp renders as SHIFT + F2 with its description" "$output"
