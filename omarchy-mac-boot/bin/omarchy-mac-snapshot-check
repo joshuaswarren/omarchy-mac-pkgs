@@ -10,9 +10,9 @@
 # root boots with the ones installed now. A snapshot is restored only when
 # they match it. Nothing here writes anything but its own markers in /run.
 #
-# With a snapshot root it checks that the snapshot carries the kernel on /boot,
-# for the subvolume swap (omarchy-system-snapshot-restore) on a Mac that still
-# boots GRUB.
+# With a snapshot root it checks that the snapshot carries the kernel on /boot.
+# Omarchy's restore no longer calls this mode (it had a subvolume swap for GRUB
+# Macs); it stays for a manual check.
 #
 # With no argument it is limine-snapper-sync's restore hook, and acts only on a
 # restore, which HOOK_CMDLINE names. It is linked twice, and the directory it

@@ -4,8 +4,8 @@ source "$(dirname "$0")/base-test.sh"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 # The Apple desktop setup omarchy-mac took over from the runtime's leaves: the
-# lifecycle entrypoints, the Electron wrappers and
-# desktop entries, the trackpad defaults and the browser decode flags.
+# lifecycle entrypoints, the Electron wrappers and desktop entries and the
+# browser decode flags.
 stage="$work/root"
 "$ROOT/install" "$stage"
 for entry in setup-system setup-user; do

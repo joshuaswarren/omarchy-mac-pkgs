@@ -11,7 +11,7 @@ bash "$BOOT/install" "$work/stage"
 # as root: they only parse.
 bash -n "$ROOT/bin/omarchy-provision-owner"
 bash -n "$ROOT/bin/omarchy-system-factory-reset"
-pass "Apple lifecycles load the separately staged package"
+pass "owner provisioning parses, and the boot package ships every operation it dispatches"
 
 # Owner provisioning and factory reset reach the Mac's boot chain only through
 # omarchy-lifecycle-dispatch; the boot package owns the files below.
