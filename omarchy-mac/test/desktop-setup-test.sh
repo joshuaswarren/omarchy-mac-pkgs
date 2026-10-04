@@ -4,18 +4,13 @@ source "$(dirname "$0")/base-test.sh"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 # The Apple desktop setup omarchy-mac took over from the runtime's leaves: the
-# lifecycle entrypoints, the pacman templates, the Electron wrappers and
+# lifecycle entrypoints, the Electron wrappers and
 # desktop entries, the trackpad defaults and the browser decode flags.
 stage="$work/root"
 "$ROOT/install" "$stage"
 for entry in setup-system setup-user; do
   [[ -x $stage/usr/lib/omarchy/mac/$entry && $(stat -c %a "$stage/usr/lib/omarchy/mac/$entry") == 755 ]] ||
     fail "the $entry entrypoint is staged for omarchy-lifecycle-dispatch"
-done
-for channel in stable rc edge; do
-  template=$stage/usr/share/omarchy-mac/pacman/pacman-$channel.conf
-  grep -qx '\[asahi-alarm\]' "$template" && grep -qx '\[omarchy\]' "$template" ||
-    fail "the Apple $channel pacman template is staged with [asahi-alarm] and [omarchy]"
 done
 [[ -x $stage/usr/bin/omarchy-hw-apple && $(readlink "$stage/usr/share/omarchy/bin/omarchy-hw-apple") == /usr/bin/omarchy-hw-apple ]] ||
   fail 'the legacy alias is staged in /usr/bin and linked from the runtime tree'
@@ -60,7 +55,7 @@ done <"$platform/displays.conf"
 for helper in electron-launchers electron-desktop-entries; do
   [[ -x $stage/usr/lib/omarchy-mac/$helper ]] || fail "$helper is staged"
 done
-pass 'the setup entrypoints, pacman templates, platform files and Electron helpers are staged'
+pass 'the setup entrypoints, platform files and Electron helpers are staged'
 
 (( EUID != 0 )) || { pass 'fixture roots are ignored as root; behaviour cases skipped'; exit 0; }
 
