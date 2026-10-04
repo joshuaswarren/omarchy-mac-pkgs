@@ -9,26 +9,6 @@ root=${root%/}
 # A detector failure stops setup rather than reading as another platform.
 platform=$(omarchy-hw-platform)
 [[ $platform == "apple-silicon" ]] || exit 0
-share="$root/usr/share/omarchy-mac"
-
-# Retire only byte-identical generated files, never links (including masks).
-retire() {
-  local file=$1 original=$2
-  if [[ -f $file && ! -L $file ]] && cmp -s "$file" "$original"; then
-    if [[ -e $file.omarchy-mac-retired || -L $file.omarchy-mac-retired ]]; then
-      if ! cmp -s "$file" "$file.omarchy-mac-retired"; then
-        echo "Error: $file.omarchy-mac-retired differs from $file; move it aside and rerun." >&2
-        return 1
-      fi
-      rm -- "$file"
-    else
-      mv -- "$file" "$file.omarchy-mac-retired"
-    fi
-  fi
-}
-
-retire "$root/etc/NetworkManager/conf.d/wifi_backend.conf" "$share/legacy/wifi_backend.conf"
-retire "$root/etc/modprobe.d/asahi-notch.conf" "$share/legacy/asahi-notch.conf"
 
 # The Intel Mac Broadcom quirk breaks Apple Silicon Wi-Fi, but a runtime without
 # its Apple guard (migration 1786391100) appended it here. Only its exact line
@@ -72,18 +52,6 @@ elif [[ -f $brcmfmac ]] && grep -Fxq -- "$quirk" "$brcmfmac"; then
 fi
 
 unit=omarchy-wifi-resume-fix.service
-retire "$root/etc/systemd/system/$unit" "$share/legacy/$unit"
-# Generated enablement links still point into /etc after the fragment retires.
-# Repair only those exact links; masks and custom links remain authoritative.
-if [[ ! -e $root/etc/systemd/system/$unit && ! -L $root/etc/systemd/system/$unit ]] &&
-  cmp -s "$root/etc/systemd/system/$unit.omarchy-mac-retired" "$share/legacy/$unit"; then
-  for target in suspend hibernate hybrid-sleep suspend-then-hibernate; do
-    link="$root/etc/systemd/system/$target.target.wants/$unit"
-    if [[ -L $link && $(readlink "$link") == "/etc/systemd/system/$unit" ]]; then
-      ln -sfn "/usr/lib/systemd/system/$unit" "$link"
-    fi
-  done
-fi
 marker="$root/var/lib/omarchy-mac/wifi-configured"
 if "$root/usr/lib/omarchy-mac/wifi-supported" && [[ ! -f $marker ]]; then
   if [[ -e $root/etc/systemd/system/$unit || -L $root/etc/systemd/system/$unit || -e $root/run/systemd/system/$unit || -L $root/run/systemd/system/$unit ]]; then
