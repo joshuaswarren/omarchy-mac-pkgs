@@ -129,17 +129,20 @@ dtb_overlays_build() {
 }
 
 # Prints each DTB, or the copy of it in OUTDIR that carries its overlays, one
-# per line and in the same order.
+# per line and in the same order. The copies name their place in the list, not
+# their file name: two device trees with the same file name get different
+# copies in OUTDIR.
 dtb_overlays_apply() {
-  local outdir="$1" overlays dtb
+  local outdir="$1" overlays dtb n=0
   shift
   overlays=$(dtb_overlays_list)
   if [ -z "$overlays" ] || ! dtb_overlays_tools; then
     overlays=""
   fi
   for dtb in "$@"; do
-    if [ -n "$overlays" ] && dtb_overlays_build "$dtb" "$outdir/${dtb##*/}" "$overlays"; then
-      printf '%s\n' "$outdir/${dtb##*/}"
+    n=$(( n + 1 ))
+    if [ -n "$overlays" ] && dtb_overlays_build "$dtb" "$outdir/overlay$n" "$overlays"; then
+      printf '%s\n' "$outdir/overlay$n"
     else
       printf '%s\n' "$dtb"
     fi
@@ -161,6 +164,11 @@ dtb_overlays_update_m1n1() {
   if ! dtb_overlays_tools; then
     echo "dtb-overlays: device tree overlays need dtc 1.7.1 or newer (dtc, fdtoverlay and fdtget); install or update dtc" >&2
     return 0
+  fi
+  # The same directory expansion newer update-m1n1 does, so the overlays also
+  # apply to a DTBS given as one directory.
+  if [ -d "${DTBS:-}" ] && grep -Fq -- '-d "$DTBS"' "$root/usr/bin/update-m1n1"; then
+    DTBS="$DTBS/apple/t6*.dtb $DTBS/apple/t81*.dtb"
   fi
   rm -rf -- "$outdir"
   mkdir -p -- "$outdir" || return 0

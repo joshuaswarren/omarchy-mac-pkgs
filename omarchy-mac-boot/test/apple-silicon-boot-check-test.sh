@@ -590,14 +590,14 @@ printf 'DTBS="%s"\n' "${dtbs[*]}" >>"$root/etc/default/update-m1n1"
 write_boot_bin "${dtbs[@]}"
 run_check --boot-chain
 expect_pass "a DTBS= line after the call, which update-m1n1 builds without the overlays"
-grep -Fq "a DTBS= line after dtb_overlays_update_m1n1" "$test_tmp/err" ||
-  fail "the check says a DTBS= line after the call leaves the overlays out" "$(cat "$test_tmp/err")"
+grep -Fq "a line after dtb_overlays_update_m1n1" "$test_tmp/err" ||
+  fail "the check says a line after the call leaves the overlays out" "$(cat "$test_tmp/err")"
 # The same line above the call: the overlays merge over it, in its order.
 { printf 'DTBS="%s"\n' "${dtbs[*]}"; cat "$ROOT/files/etc/default/update-m1n1"; } >"$root/etc/default/update-m1n1"
 write_overlaid_boot_bin
 run_check --boot-chain
 expect_pass "a DTBS= line above the call, which update-m1n1 builds with the overlaid device tree"
-grep -Fq "overwrites the overlaid device trees" "$test_tmp/err" &&
+grep -Fq "overwrites DTBS" "$test_tmp/err" &&
   fail "the check is not quiet about a DTBS= line the call merges over" "$(cat "$test_tmp/err")"
 # OMARCHY_DTB_OVERLAYS=0 above the packaged call: the owner's opt-out; the
 # rebuild says nothing and builds without the overlays.
@@ -605,8 +605,25 @@ grep -Fq "overwrites the overlaid device trees" "$test_tmp/err" &&
 write_boot_bin "${dtbs[@]}"
 run_check --boot-chain
 expect_pass "an owner's OMARCHY_DTB_OVERLAYS=0, which update-m1n1 builds without the overlays"
-grep -Fq "overwrites the overlaid device trees" "$test_tmp/err" &&
+grep -Fq "overwrites DTBS" "$test_tmp/err" &&
   fail "the check does not stay quiet about an explicit opt-out" "$(cat "$test_tmp/err")"
+# A quoted opt-out: the library compares the string, so the plain image is
+# what the rebuild vouches.
+{ printf 'OMARCHY_DTB_OVERLAYS="0"\n'; cat "$ROOT/files/etc/default/update-m1n1"; } >"$root/etc/default/update-m1n1"
+write_boot_bin "${dtbs[@]}"
+run_check --boot-chain
+expect_pass "a quoted OMARCHY_DTB_OVERLAYS=\"0\", which update-m1n1 builds without the overlays"
+grep -Fq "overwrites DTBS" "$test_tmp/err" &&
+  fail "the check does not stay quiet about a quoted opt-out" "$(cat "$test_tmp/err")"
+# A DTBS= line the shell never reaches: the state at the call is what counts,
+# so the merged image is what the rebuild vouches.
+{ cat "$ROOT/files/etc/default/update-m1n1"; printf 'if false; then\n  DTBS="/gone.dtb"\nfi\n'; } >"$root/etc/default/update-m1n1"
+write_overlaid_boot_bin
+run_check --boot-chain
+expect_pass "a DTBS= line that never runs, with the overlaid device tree"
+grep -Fq "overwrites DTBS" "$test_tmp/err" &&
+  fail "the check does not stay quiet about a DTBS= line that never runs" "$(cat "$test_tmp/err")"
+write_boot_bin "${dtbs[@]}"
 # An edited configuration kept over the packaged one's .pacnew, and no
 # configuration at all: update-m1n1 never applies the overlays, nor does the rebuild.
 printf 'export LC_ALL=C\n# dtb_overlays_update_m1n1\n' >"$root/etc/default/update-m1n1"
@@ -625,6 +642,24 @@ rm "$root/etc/default/update-m1n1"
 run_check --boot-chain
 expect_fail "an overlay no package owns" "device tree overlay /usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo is not owned by a package"
 pass "package-owned device tree overlays are rebuilt into m1n1 stage 2 where the configuration applies them, and an unowned one fails"
+# A DTBS given as a directory, on an update-m1n1 that expands it: the library
+# expands it the same way, and the overlays apply.
+system linux-aurora 'apple/t6000-j314s.dtb apple/t6020-j414s.dtb apple/t8103-j274.dtb'
+add_directory_expansion
+{ printf 'DTBS=/usr/lib/modules/%s/dtbs\n' "$kver"; cat "$ROOT/files/etc/default/update-m1n1"; } >"$root/etc/default/update-m1n1"
+mkdir -p "$root/usr/lib/omarchy-mac-boot/dtb-overlays/t8103"
+printf 'overlay\n' >"$root/usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo"
+printf '/usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo omarchy-ane\n' >"$test_tmp/files/owners"
+write_overlaid_boot_bin
+run_check --boot-chain
+expect_pass "a directory DTBS, which update-m1n1 expands with the overlaid device tree"
+grep -Fq "overwrites DTBS" "$test_tmp/err" &&
+  fail "the check does not stay quiet about a directory DTBS" "$(cat "$test_tmp/err")"
+# Back to the plain fixture, with the overlay installed, for what follows.
+system linux-aurora
+mkdir -p "$root/usr/lib/omarchy-mac-boot/dtb-overlays/t8103"
+printf 'overlay\n' >"$root/usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo"
+printf '/usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo omarchy-ane\n' >"$test_tmp/files/owners"
 
 # update-m1n1's defaults: := fills unset and empty settings alike.
 for config in '' 'DTBS=\nSOURCE=""\n' 'CONFIG=\nM1N1=\nU_BOOT=\n' 'M1N1_UPDATE_DISABLED=\n'; do
