@@ -649,6 +649,21 @@ run_check --boot-chain
 expect_pass "installed overlays that apply to no tree in the call's list"
 grep -Fq "overwrites DTBS" "$test_tmp/err" &&
   fail "the check does not stay quiet when no overlay applies" "$(cat "$test_tmp/err")"
+# An installed overlay that matches no tree also leaves DTBS untouched. The
+# later := then selects one plain tree, not the default list.
+system linux-aurora
+mkdir -p "$root/usr/lib/omarchy-mac-boot/dtb-overlays/t6001"
+printf 'overlay\n' >"$root/usr/lib/omarchy-mac-boot/dtb-overlays/t6001/omarchy-ane.dtbo"
+printf '/usr/lib/omarchy-mac-boot/dtb-overlays/t6001/omarchy-ane.dtbo omarchy-ane\n' >"$test_tmp/files/owners"
+{ cat "$ROOT/files/etc/default/update-m1n1"; printf ': ${DTBS:="%s"}\n' "${dtbs[0]}"; } >"$root/etc/default/update-m1n1"
+write_boot_bin "${dtbs[0]}"
+run_check --boot-chain
+expect_pass "a DTBS default after the call when no overlay applies"
+# Back to the t8103 overlay for what follows.
+rm -rf "$root/usr/lib/omarchy-mac-boot/dtb-overlays/t6001"
+mkdir -p "$root/usr/lib/omarchy-mac-boot/dtb-overlays/t8103"
+printf 'overlay\n' >"$root/usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo"
+printf '/usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo omarchy-ane\n' >"$test_tmp/files/owners"
 # A later DTBS= line with the value the call already saw: it still overwrites
 # the merged list on the real run, so the rebuild vouches the plain image and
 # says so.
