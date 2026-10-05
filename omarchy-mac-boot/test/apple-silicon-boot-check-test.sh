@@ -649,6 +649,8 @@ run_check --boot-chain
 expect_pass "installed overlays that apply to no tree in the call's list"
 grep -Fq "overwrites DTBS" "$test_tmp/err" &&
   fail "the check does not stay quiet when no overlay applies" "$(cat "$test_tmp/err")"
+grep -Fq "without dtc" "$test_tmp/err" &&
+  fail "no dtc warning when dtc is fine and no overlay applies" "$(cat "$test_tmp/err")"
 # An installed overlay that matches no tree also leaves DTBS untouched. The
 # later := then selects one plain tree, not the default list.
 system linux-aurora
