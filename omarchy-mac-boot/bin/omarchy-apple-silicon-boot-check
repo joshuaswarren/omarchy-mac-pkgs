@@ -605,15 +605,28 @@ if [[ -e $config_file ]]; then
     esac
   done <"$workdir/config"
 fi
-# What update-m1n1 builds from: the state dtb_overlays_update_m1n1 is called
-# with, read the way the shell reaches it. A copy of the configuration sources
-# a stub in place of dtb-overlays.sh, recording DTBS and OMARCHY_DTB_OVERLAYS
-# at the call and changing nothing, so quoting, unset, declare, a default
-# assignment and a branch that never runs all read the same as update-m1n1
-# reads them.
+# What update-m1n1 builds from: the end state the configuration leaves DTBS in,
+# and a second source through a stub that replays the merge under a name no
+# device tree list can have. The stand-in surviving means the merged list boots.
 overlays_called=0
 overlays_disabled=0
 dtbs_set_after=0
+merged_survived=0
+merged_would=0
+export OMARCHY_DTB_OVERLAYS_ROOT=$root
+mapfile -t overlays < <(dtb_overlays_list)
+config_dtbs=$DTBS
+
+# ls -d prints what matches, and nothing at all when nothing does.
+newest_match() {
+  local match
+  for match in "$root"$1; do
+    if [[ -e $match || -L $match ]]; then
+      printf '%s\n' "${match#"$root"}"
+    fi
+  done | sort -rV | sed -n 1p
+}
+
 if [[ -e $config_file ]]; then
   stub=$workdir/dtb-overlays-stub.sh
   cat >"$stub" <<'STUB'
@@ -639,43 +652,70 @@ STUB
       printf "%s=%s\0" overlays_call_ran "${overlays_call_ran-}"
       printf "%s=%s\0" DTBS "${DTBS-}"
     ' _ "$workdir/config-source" >"$workdir/call" || fail "/etc/default/update-m1n1 cannot be read"
-  dtbs_at_call="" overlays_at_call="" overlays_call_ran="" DTBS=""
+  dtbs_at_call="" overlays_at_call="" overlays_call_ran="" placeholder_dtbs=""
   while IFS= read -r -d '' entry; do
     value=${entry#*=}
     case "${entry%%=*}" in
       dtbs_at_call) dtbs_at_call=$value ;;
       overlays_at_call) overlays_at_call=$value ;;
       overlays_call_ran) overlays_call_ran=$value ;;
-      DTBS) DTBS=$value ;;
+      DTBS) placeholder_dtbs=$value ;;
     esac
   done <"$workdir/call"
   if [[ -n $overlays_call_ran ]]; then
     overlays_called=1
     # The library turns the merge off with the same string compare.
     [[ $overlays_at_call == 0 ]] && overlays_disabled=1
-    if [[ $DTBS == "__omarchy_merged__" ]]; then
-      # The merge survived: update-m1n1 builds from the overlaid copy of the
-      # list the call saw.
+    if (( ! overlays_disabled )) && (( ${#overlays[@]} )) &&
+       dtb_overlays_supported "$script" && dtb_overlays_tools; then
+      # The list the merge would run on: the call's own, the newest kernel's
+      # trees when it saw none, a directory expanded as update-m1n1 expands it.
       DTBS=$dtbs_at_call
+      if [[ -z $DTBS ]]; then
+        DTBS=$(newest_match "/lib/modules/*-ARCH")/dtbs/*.dtb
+      fi
+      if [[ -d $root$DTBS ]] && (( expands_directory )); then
+        DTBS="$DTBS/apple/t6*.dtb $DTBS/apple/t81*.dtb"
+      fi
+      # Split and globbed the way update-m1n1's unquoted $DTBS is, against the
+      # root: the merge assigns DTBS only when it overlays a tree in the list.
+      merged_would=0
+      mkdir "$workdir/probe"
+      set -f
+      read -r -d '' -a probe_words <<<"$DTBS" || true
+      set +f
+      probe_args=()
+      for probe_word in "${probe_words[@]}"; do
+        probe_args+=("$root"$probe_word)
+      done
+      mapfile -t probed < <(dtb_overlays_apply "$workdir/probe" "${probe_args[@]}")
+      for probe_path in "${probed[@]}"; do
+        if [[ $probe_path == "$workdir/probe/"* ]]; then
+          merged_would=1
+          break
+        fi
+      done
+    fi
+    if (( merged_would )); then
+      if [[ $placeholder_dtbs == "__omarchy_merged__" ]]; then
+        # The stand-in survived: the merged list boots.
+        merged_survived=1
+      else
+        # A later line replaced the merge: the configuration's own end state
+        # is what boots.
+        DTBS=$config_dtbs
+        dtbs_set_after=1
+      fi
     else
-      # A line after the call left something else in DTBS, and update-m1n1
-      # builds without the overlays.
-      dtbs_set_after=1
+      # The library leaves DTBS alone: the configuration's own end state is
+      # what boots.
+      DTBS=$config_dtbs
     fi
   fi
 fi
+
 [[ -z $disabled ]] || (( boot_chain )) ||
   fail "M1N1_UPDATE_DISABLED is set in /etc/default/update-m1n1, so m1n1 does not follow the kernel and its device trees cannot be vouched for; remove it, run sudo update-m1n1, then omarchy update"
-
-# ls -d prints what matches, and nothing at all when nothing does.
-newest_match() {
-  local match
-  for match in "$root"$1; do
-    if [[ -e $match || -L $match ]]; then
-      printf '%s\n' "${match#"$root"}"
-    fi
-  done | sort -rV | sed -n 1p
-}
 
 simple_path='^/[A-Za-z0-9._/+-]*$'
 source_path='^\$SOURCE(/[A-Za-z0-9._/+-]*)$'
@@ -752,30 +792,28 @@ overlays_applied=0
 for dtb in "${dtbs[@]}"; do
   paths+=("$root$dtb")
 done
-export OMARCHY_DTB_OVERLAYS_ROOT=$root
-mapfile -t overlays < <(dtb_overlays_list)
 if (( ${#overlays[@]} )); then
   for overlay in "${overlays[@]}"; do
     pacman -Qoq "${overlay#"$root"}" >/dev/null 2>&1 ||
       fail "device tree overlay ${overlay#"$root"} is not owned by a package"
   done
-  if (( ! overlays_called )); then
-    echo "Apple Silicon boot check: warning: /etc/default/update-m1n1 does not apply the device tree overlays, so update-m1n1 leaves them out; merge its .pacnew if there is one" >&2
-  elif (( overlays_disabled )); then
-    # The owner opted out with OMARCHY_DTB_OVERLAYS=0: update-m1n1 builds
-    # without the overlays on purpose.
-    :
-  elif (( dtbs_set_after )); then
-    echo "Apple Silicon boot check: warning: a line after dtb_overlays_update_m1n1 in /etc/default/update-m1n1 overwrites DTBS, so update-m1n1 leaves the device tree overlays out; move it above the call, or set OMARCHY_DTB_OVERLAYS=0 above it to keep the plain device trees" >&2
-  elif ! dtb_overlays_supported "$script"; then
-    echo "Apple Silicon boot check: warning: /usr/bin/update-m1n1 has a DTBS default the device tree overlays do not follow, so it leaves them out" >&2
-  elif ! dtb_overlays_tools; then
-    echo "Apple Silicon boot check: warning: device tree overlays are installed, but update-m1n1 leaves them out without dtc 1.7.1 or newer (dtc, fdtoverlay and fdtget); install or update dtc" >&2
-  else
-    mkdir "$workdir/dtbs"
-    mapfile -t paths < <(dtb_overlays_apply "$workdir/dtbs" "${paths[@]}")
-    overlays_applied=1
-  fi
+fi
+if (( merged_survived )); then
+  mkdir "$workdir/dtbs"
+  mapfile -t paths < <(dtb_overlays_apply "$workdir/dtbs" "${paths[@]}")
+  overlays_applied=1
+elif (( ${#overlays[@]} )) && (( ! overlays_called )); then
+  echo "Apple Silicon boot check: warning: /etc/default/update-m1n1 does not apply the device tree overlays, so update-m1n1 leaves them out; merge its .pacnew if there is one" >&2
+elif (( overlays_disabled )); then
+  # The owner opted out with OMARCHY_DTB_OVERLAYS=0: update-m1n1 builds
+  # without the overlays on purpose.
+  :
+elif (( dtbs_set_after )); then
+  echo "Apple Silicon boot check: warning: a line after dtb_overlays_update_m1n1 in /etc/default/update-m1n1 overwrites DTBS, so update-m1n1 leaves the device tree overlays out; move it above the call, or set OMARCHY_DTB_OVERLAYS=0 above it to keep the plain device trees" >&2
+elif (( ${#overlays[@]} )) && ! dtb_overlays_supported "$script"; then
+  echo "Apple Silicon boot check: warning: /usr/bin/update-m1n1 has a DTBS default the device tree overlays do not follow, so it leaves them out" >&2
+elif (( ${#overlays[@]} )); then
+  echo "Apple Silicon boot check: warning: device tree overlays are installed, but update-m1n1 leaves them out without dtc 1.7.1 or newer (dtc, fdtoverlay and fdtget); install or update dtc" >&2
 fi
 declare -A dtb_file=()
 for i in "${!dtbs[@]}"; do
