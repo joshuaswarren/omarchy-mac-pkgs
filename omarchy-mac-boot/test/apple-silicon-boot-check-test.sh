@@ -276,6 +276,25 @@ write_boot_bin() {
   } >"$esp/m1n1/boot.bin"
 }
 
+# boot.bin as update-m1n1 writes it with the fixture's overlaid t8103 device tree.
+write_overlaid_boot_bin() {
+  local body size
+  overlaid="$test_tmp/t8103-j274.dtb"
+  body="device tree t8103-j274.dtb"$'\n'"overlay omarchy-ane.dtbo"$'\n'
+  size=$(( 8 + ${#body} ))
+  {
+    printf '\xd0\x0d\xfe\xed'
+    printf "$(printf '\\x%02x' $(( size >> 24 & 255 )) $(( size >> 16 & 255 )) $(( size >> 8 & 255 )) $(( size & 255 )))"
+    printf '%s' "$body"
+  } >"$overlaid"
+  mkdir -p "$esp/m1n1"
+  {
+    cat "$root/usr/lib/asahi-boot/m1n1.bin" "$root${dtbs[0]}" "$root${dtbs[1]}" "$overlaid"
+    gzip -c "$root/usr/lib/asahi-boot/u-boot-nodtb.bin"
+    printf 'chosen.asahi,efi-system-partition=1234\ndisplay=2560x1600\nmitigations=off\n'
+  } >"$esp/m1n1/boot.bin"
+}
+
 # A Mac booting $1 with its m1n1; $2 onwards are its device tree names.
 system() {
   local kernel=$1 bootloader=m1n1-aurora
@@ -558,33 +577,36 @@ printf 'overlay\n' >"$root/usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-a
 printf '/usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo omarchy-ane\n' >"$test_tmp/files/owners"
 run_check --boot-chain
 expect_fail "an overlay update-m1n1 has not applied yet" "m1n1/boot.bin on the system ESP (/boot/efi) is not m1n1"
-overlaid="$test_tmp/t8103-j274.dtb"
-body="device tree t8103-j274.dtb"$'\n'"overlay omarchy-ane.dtbo"$'\n'
-size=$(( 8 + ${#body} ))
-{
-  printf '\xd0\x0d\xfe\xed'
-  printf "$(printf '\\x%02x' $(( size >> 24 & 255 )) $(( size >> 16 & 255 )) $(( size >> 8 & 255 )) $(( size & 255 )))"
-  printf '%s' "$body"
-} >"$overlaid"
-{
-  cat "$root/usr/lib/asahi-boot/m1n1.bin" "$root${dtbs[0]}" "$root${dtbs[1]}" "$overlaid"
-  gzip -c "$root/usr/lib/asahi-boot/u-boot-nodtb.bin"
-  printf 'chosen.asahi,efi-system-partition=1234\ndisplay=2560x1600\nmitigations=off\n'
-} >"$esp/m1n1/boot.bin"
+write_overlaid_boot_bin
 run_check --boot-chain
 expect_pass "an m1n1 image update-m1n1 built with the overlaid device tree"
 run_check
 expect_pass "an m1n1 image with the overlaid device tree, in the full check"
 [[ -z $(ls -A "$root/run") ]] || fail "the rebuild writes the overlaid device tree only to its own work directory"
-# A DTBS the administrator added to the packaged configuration: update-m1n1
-# leaves the overlays out, and so does the rebuild.
+# A DTBS= line after the packaged call: it overwrites the merged list, so
+# update-m1n1 leaves the overlays out, and so does the rebuild.
 cp "$ROOT/files/etc/default/update-m1n1" "$root/etc/default/update-m1n1"
 printf 'DTBS="%s"\n' "${dtbs[*]}" >>"$root/etc/default/update-m1n1"
 write_boot_bin "${dtbs[@]}"
 run_check --boot-chain
-expect_pass "an administrator's DTBS, which update-m1n1 builds without the overlays"
-grep -Fq "DTBS is set in /etc/default/update-m1n1" "$test_tmp/err" ||
-  fail "the check says an administrator's DTBS leaves the overlays out" "$(cat "$test_tmp/err")"
+expect_pass "a DTBS= line after the call, which update-m1n1 builds without the overlays"
+grep -Fq "a DTBS= line after dtb_overlays_update_m1n1" "$test_tmp/err" ||
+  fail "the check says a DTBS= line after the call leaves the overlays out" "$(cat "$test_tmp/err")"
+# The same line above the call: the overlays merge over it, in its order.
+{ printf 'DTBS="%s"\n' "${dtbs[*]}"; cat "$ROOT/files/etc/default/update-m1n1"; } >"$root/etc/default/update-m1n1"
+write_overlaid_boot_bin
+run_check --boot-chain
+expect_pass "a DTBS= line above the call, which update-m1n1 builds with the overlaid device tree"
+grep -Fq "overwrites the overlaid device trees" "$test_tmp/err" &&
+  fail "the check is not quiet about a DTBS= line the call merges over" "$(cat "$test_tmp/err")"
+# OMARCHY_DTB_OVERLAYS=0 above the packaged call: the owner's opt-out; the
+# rebuild says nothing and builds without the overlays.
+{ printf 'OMARCHY_DTB_OVERLAYS=0\n'; cat "$ROOT/files/etc/default/update-m1n1"; } >"$root/etc/default/update-m1n1"
+write_boot_bin "${dtbs[@]}"
+run_check --boot-chain
+expect_pass "an owner's OMARCHY_DTB_OVERLAYS=0, which update-m1n1 builds without the overlays"
+grep -Fq "overwrites the overlaid device trees" "$test_tmp/err" &&
+  fail "the check does not stay quiet about an explicit opt-out" "$(cat "$test_tmp/err")"
 # An edited configuration kept over the packaged one's .pacnew, and no
 # configuration at all: update-m1n1 never applies the overlays, nor does the rebuild.
 printf 'export LC_ALL=C\n# dtb_overlays_update_m1n1\n' >"$root/etc/default/update-m1n1"
