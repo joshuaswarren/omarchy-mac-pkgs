@@ -631,6 +631,24 @@ run_check --boot-chain
 expect_pass "a DTBS default after the call, which the merge already filled"
 grep -Fq "overwrites DTBS" "$test_tmp/err" &&
   fail "the check does not stay quiet about a DTBS default after the call" "$(cat "$test_tmp/err")"
+# A ': ${DTBS:=...}' default after the call with no overlay installed: the
+# library leaves DTBS alone, so the default fires, and the plain image is
+# what boots.
+mv "$root/usr/lib/omarchy-mac-boot/dtb-overlays" "$test_tmp/overlays-aside"
+{ cat "$ROOT/files/etc/default/update-m1n1"; printf ': ${DTBS:="%s %s"}\n' "${dtbs[0]}" "${dtbs[1]}"; } >"$root/etc/default/update-m1n1"
+write_boot_bin "${dtbs[0]}" "${dtbs[1]}"
+run_check --boot-chain
+expect_pass "a DTBS default after the call with no overlay installed"
+mv "$test_tmp/overlays-aside" "$root/usr/lib/omarchy-mac-boot/dtb-overlays"
+# Overlays installed, none applies to the trees the call saw: the library
+# leaves DTBS alone all the same, so the default after the call fires, and the
+# plain image is still what boots.
+{ printf 'DTBS="%s %s"\n' "${dtbs[0]}" "${dtbs[1]}"; cat "$ROOT/files/etc/default/update-m1n1"; printf ': ${DTBS:="%s %s"}\n' "${dtbs[0]}" "${dtbs[1]}"; } >"$root/etc/default/update-m1n1"
+write_boot_bin "${dtbs[0]}" "${dtbs[1]}"
+run_check --boot-chain
+expect_pass "installed overlays that apply to no tree in the call's list"
+grep -Fq "overwrites DTBS" "$test_tmp/err" &&
+  fail "the check does not stay quiet when no overlay applies" "$(cat "$test_tmp/err")"
 # A later DTBS= line with the value the call already saw: it still overwrites
 # the merged list on the real run, so the rebuild vouches the plain image and
 # says so.
