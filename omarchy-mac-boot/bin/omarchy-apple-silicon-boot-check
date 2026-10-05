@@ -621,6 +621,11 @@ dtb_overlays_update_m1n1() {
   dtbs_at_call=${DTBS-}
   overlays_at_call=${OMARCHY_DTB_OVERLAYS-}
   overlays_call_ran=1
+  # The same opt-out the library applies, then the merge it would make, under
+  # a name no device tree list can have. What a later line leaves in DTBS is
+  # what update-m1n1 finally builds from.
+  [ "$overlays_at_call" != 0 ] && DTBS=__omarchy_merged__
+  return 0
 }
 STUB
   sed "s|/usr/lib/omarchy-mac/boot/dtb-overlays\\.sh|$stub|g" "$config_file" >"$workdir/config-source" ||
@@ -632,23 +637,31 @@ STUB
       printf "%s=%s\0" dtbs_at_call "${dtbs_at_call-}"
       printf "%s=%s\0" overlays_at_call "${overlays_at_call-}"
       printf "%s=%s\0" overlays_call_ran "${overlays_call_ran-}"
+      printf "%s=%s\0" DTBS "${DTBS-}"
     ' _ "$workdir/config-source" >"$workdir/call" || fail "/etc/default/update-m1n1 cannot be read"
-  dtbs_at_call="" overlays_at_call="" overlays_call_ran=""
+  dtbs_at_call="" overlays_at_call="" overlays_call_ran="" DTBS=""
   while IFS= read -r -d '' entry; do
     value=${entry#*=}
     case "${entry%%=*}" in
       dtbs_at_call) dtbs_at_call=$value ;;
       overlays_at_call) overlays_at_call=$value ;;
       overlays_call_ran) overlays_call_ran=$value ;;
+      DTBS) DTBS=$value ;;
     esac
   done <"$workdir/call"
   if [[ -n $overlays_call_ran ]]; then
     overlays_called=1
     # The library turns the merge off with the same string compare.
     [[ $overlays_at_call == 0 ]] && overlays_disabled=1
-    # A line after the call that leaves a different DTBS overwrote the merged
-    # list, and update-m1n1 builds without the overlays.
-    [[ $dtbs_at_call == "$DTBS" ]] || dtbs_set_after=1
+    if [[ $DTBS == "__omarchy_merged__" ]]; then
+      # The merge survived: update-m1n1 builds from the overlaid copy of the
+      # list the call saw.
+      DTBS=$dtbs_at_call
+    else
+      # A line after the call left something else in DTBS, and update-m1n1
+      # builds without the overlays.
+      dtbs_set_after=1
+    fi
   fi
 fi
 [[ -z $disabled ]] || (( boot_chain )) ||

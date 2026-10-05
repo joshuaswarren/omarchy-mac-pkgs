@@ -623,7 +623,23 @@ run_check --boot-chain
 expect_pass "a DTBS= line that never runs, with the overlaid device tree"
 grep -Fq "overwrites DTBS" "$test_tmp/err" &&
   fail "the check does not stay quiet about a DTBS= line that never runs" "$(cat "$test_tmp/err")"
+# A ': ${DTBS:=...}' default after the call: the merge already filled DTBS, so
+# the default never fires, and the merged image is what the rebuild vouches.
+{ cat "$ROOT/files/etc/default/update-m1n1"; printf ': ${DTBS:="%s"}\n' "${dtbs[*]}"; } >"$root/etc/default/update-m1n1"
+write_overlaid_boot_bin
+run_check --boot-chain
+expect_pass "a DTBS default after the call, which the merge already filled"
+grep -Fq "overwrites DTBS" "$test_tmp/err" &&
+  fail "the check does not stay quiet about a DTBS default after the call" "$(cat "$test_tmp/err")"
+# A later DTBS= line with the value the call already saw: it still overwrites
+# the merged list on the real run, so the rebuild vouches the plain image and
+# says so.
+{ printf 'DTBS="%s"\n' "${dtbs[*]}"; cat "$ROOT/files/etc/default/update-m1n1"; printf 'DTBS="%s"\n' "${dtbs[*]}"; } >"$root/etc/default/update-m1n1"
 write_boot_bin "${dtbs[@]}"
+run_check --boot-chain
+expect_pass "a later DTBS= line with the same value, which overwrites the merge"
+grep -Fq "overwrites DTBS" "$test_tmp/err" ||
+  fail "the check says a later DTBS= line with the same value overwrites the merge" "$(cat "$test_tmp/err")"
 # An edited configuration kept over the packaged one's .pacnew, and no
 # configuration at all: update-m1n1 never applies the overlays, nor does the rebuild.
 printf 'export LC_ALL=C\n# dtb_overlays_update_m1n1\n' >"$root/etc/default/update-m1n1"
