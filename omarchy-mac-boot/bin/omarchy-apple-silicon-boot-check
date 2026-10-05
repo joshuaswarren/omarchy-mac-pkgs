@@ -605,13 +605,29 @@ if [[ -e $config_file ]]; then
     esac
   done <"$workdir/config"
 fi
-# dtb-overlays.sh leaves a DTBS the administrator set alone, overlays and all.
-config_dtbs=$DTBS
 # update-m1n1 applies overlays only where its configuration calls for them,
 # which an edited copy kept over the packaged one's .pacnew does not.
 overlays_called=0
-if [[ -e $config_file ]] && grep -Eq '^[[:space:]]*dtb_overlays_update_m1n1([[:space:];|&]|$)' "$config_file"; then
-  overlays_called=1
+overlays_disabled=0
+dtbs_set_after=0
+if [[ -e $config_file ]]; then
+  # No match leaves the line empty; the || true keeps a no-match grep from
+  # tripping pipefail.
+  call_line=$(grep -nE '^[[:space:]]*dtb_overlays_update_m1n1([[:space:];|&]|$)' "$config_file" | tail -n 1 || true)
+  [[ -n $call_line ]] && overlays_called=1
+  call_line=${call_line%%:*}
+  disabled_line=$(grep -nE '^[[:space:]]*(export[[:space:]]+)?OMARCHY_DTB_OVERLAYS=0([[:space:]]|#|$)' "$config_file" | tail -n 1 || true)
+  dtbs_line=$(grep -nE '^[[:space:]]*(export[[:space:]]+)?DTBS=' "$config_file" | tail -n 1 || true)
+  # The overlays merge over a DTBS set before the call; a DTBS= line after it
+  # overwrites the merged list, and update-m1n1 builds without the overlays.
+  if [[ -n $dtbs_line && -n $call_line ]] && (( ${dtbs_line%%:*} > ${call_line%%:*} )); then
+    dtbs_set_after=1
+  fi
+  # OMARCHY_DTB_OVERLAYS=0 above the call is the owner's opt-out: update-m1n1
+  # leaves DTBS alone. Below the call it never reaches the merge.
+  if [[ -n $disabled_line && -n $call_line ]] && (( ${disabled_line%%:*} < ${call_line%%:*} )); then
+    overlays_disabled=1
+  fi
 fi
 [[ -z $disabled ]] || (( boot_chain )) ||
   fail "M1N1_UPDATE_DISABLED is set in /etc/default/update-m1n1, so m1n1 does not follow the kernel and its device trees cannot be vouched for; remove it, run sudo update-m1n1, then omarchy update"
@@ -709,8 +725,12 @@ if (( ${#overlays[@]} )); then
   done
   if (( ! overlays_called )); then
     echo "Apple Silicon boot check: warning: /etc/default/update-m1n1 does not apply the device tree overlays, so update-m1n1 leaves them out; merge its .pacnew if there is one" >&2
-  elif [[ -n $config_dtbs ]]; then
-    echo "Apple Silicon boot check: warning: DTBS is set in /etc/default/update-m1n1, so update-m1n1 leaves the device tree overlays out" >&2
+  elif (( overlays_disabled )); then
+    # The owner opted out with OMARCHY_DTB_OVERLAYS=0: update-m1n1 builds
+    # without the overlays on purpose.
+    :
+  elif (( dtbs_set_after )); then
+    echo "Apple Silicon boot check: warning: a DTBS= line after dtb_overlays_update_m1n1 in /etc/default/update-m1n1 overwrites the overlaid device trees, so update-m1n1 leaves the overlays out; move the line above the call, or set OMARCHY_DTB_OVERLAYS=0 to choose this" >&2
   elif ! dtb_overlays_supported "$script"; then
     echo "Apple Silicon boot check: warning: /usr/bin/update-m1n1 has a DTBS default the device tree overlays do not follow, so it leaves them out" >&2
   elif ! dtb_overlays_tools; then

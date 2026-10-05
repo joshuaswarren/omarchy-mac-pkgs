@@ -146,13 +146,13 @@ dtb_overlays_apply() {
   done
 }
 
-# Sets DTBS for update-m1n1 when an overlay applies to one of the newest
-# kernel's device trees; otherwise leaves DTBS as it was.
+# Sets DTBS for update-m1n1, with the overlaid copy of every device tree an
+# overlay applies to: over the DTBS the configuration already set, or, with
+# none set, over the newest kernel's device trees; otherwise leaves DTBS as it was.
 dtb_overlays_update_m1n1() {
   local root="${OMARCHY_DTB_OVERLAYS_ROOT:-}" modules outdir list="" path
   outdir=$root/run/omarchy-dtb-overlays
   [ "${OMARCHY_DTB_OVERLAYS:-1}" != 0 ] || return 0
-  [ -z "${DTBS:-}" ] || return 0
   [ -n "$(dtb_overlays_list)" ] || return 0
   if ! dtb_overlays_supported "$root/usr/bin/update-m1n1"; then
     echo "dtb-overlays: /usr/bin/update-m1n1 has a DTBS default this does not reproduce; device tree overlays are not applied" >&2
@@ -162,12 +162,20 @@ dtb_overlays_update_m1n1() {
     echo "dtb-overlays: device tree overlays need dtc 1.7.1 or newer (dtc, fdtoverlay and fdtget); install or update dtc" >&2
     return 0
   fi
-  modules=$(/bin/ls -d "$root"/lib/modules/*-ARCH | sort -rV | head -1)
   rm -rf -- "$outdir"
   mkdir -p -- "$outdir" || return 0
-  for path in $(dtb_overlays_apply "$outdir" "$modules"/dtbs/*.dtb); do
-    list="$list $path"
-  done
+  if [ -n "${DTBS:-}" ]; then
+    # Expanded the way update-m1n1's unquoted $DTBS is.
+    # shellcheck disable=SC2086 # split and globbed the way update-m1n1 splits it
+    for path in $(dtb_overlays_apply "$outdir" $DTBS); do
+      list="$list $path"
+    done
+  else
+    modules=$(/bin/ls -d "$root"/lib/modules/*-ARCH | sort -rV | head -1)
+    for path in $(dtb_overlays_apply "$outdir" "$modules"/dtbs/*.dtb); do
+      list="$list $path"
+    done
+  fi
   case "$list" in
     *" $outdir/"*) DTBS=${list# } ;;
   esac

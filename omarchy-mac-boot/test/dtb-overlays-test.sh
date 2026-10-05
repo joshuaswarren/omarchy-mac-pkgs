@@ -196,12 +196,20 @@ out=$root/run/omarchy-dtb-overlays
 [[ $DTBS == "$dtbs/t6001-j316c.dtb $dtbs/t8103-j274.dtb $out/t8103-j293.dtb" ]] ||
   fail "update-m1n1 takes the newest kernel's device trees with the overlaid one in its place: $DTBS"
 has_ane "$out/t8103-j293.dtb" apple,t8103-ane || fail "update-m1n1's copy carries the overlay"
+# A DTBS set before the call: the overlays merge over it, in its order, and a
+# tree no overlay applies to stays as it is.
+DTBS="$dtbs/t8103-j293.dtb $dtbs/t6001-j316c.dtb /custom.dtb"
+dtb_overlays_update_m1n1
+[[ $DTBS == "$out/t8103-j293.dtb $dtbs/t6001-j316c.dtb /custom.dtb" ]] ||
+  fail "the overlays merge over a DTBS set before the call: $DTBS"
+has_ane "$out/t8103-j293.dtb" apple,t8103-ane || fail "the merged copy carries the overlay"
 DTBS=/custom.dtb
 dtb_overlays_update_m1n1
-[[ $DTBS == /custom.dtb ]] || fail "a DTBS the administrator set is kept"
-unset DTBS
+[[ $DTBS == /custom.dtb ]] || fail "a DTBS no overlay applies to stays as it is"
 OMARCHY_DTB_OVERLAYS=0 dtb_overlays_update_m1n1
-[[ -z ${DTBS:-} ]] || fail "OMARCHY_DTB_OVERLAYS=0 leaves DTBS alone"
+[[ $DTBS == /custom.dtb ]] || fail "OMARCHY_DTB_OVERLAYS=0 leaves DTBS alone"
+unset DTBS
+pass "the overlays merge over a DTBS the call finds set"
 sed -i 's|sort -rV|sort -r|' "$root/usr/bin/update-m1n1"
 dtb_overlays_update_m1n1 2>"$tmp/err"
 [[ -z ${DTBS:-} ]] || fail "an update-m1n1 with another DTBS default gets no overlays"
