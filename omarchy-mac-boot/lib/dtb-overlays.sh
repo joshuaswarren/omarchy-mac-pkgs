@@ -137,7 +137,7 @@ dtb_overlays_build() {
 # one line per expanded tree, in apply order. Prints the list that replaces
 # DTBS: the copy for a tree the overlays changed, the tree itself otherwise.
 dtb_overlays_apply() {
-  local root="${OMARCHY_DTB_OVERLAYS_ROOT:-}" outdir="$1" overlays src out n=0 word dtb
+  local root="${OMARCHY_DTB_OVERLAYS_ROOT:-}" outdir="$1" overlays out n=0 word dtb glued part
   shift
   overlays=$(dtb_overlays_list)
   if [ -z "$overlays" ] || ! dtb_overlays_tools; then
@@ -149,6 +149,7 @@ dtb_overlays_apply() {
   # glued literal and fails the copy, like a missing tree does for real.
   for word in "$@"; do
     glued=""
+    set -f
     for part in $word; do
       glued="$glued $root$part"
     done
@@ -163,26 +164,35 @@ dtb_overlays_apply() {
         printf '%s\n' "$dtb"
       fi
     done
-    set -f
   done
-  set +f
+}
+
+# Why the overlays are left out, on stderr. The boot check replaces this to
+# keep the library's notes apart from anything else the configuration prints.
+dtb_overlays_note() {
+  echo "dtb-overlays: $*" >&2
 }
 
 # Sets DTBS for update-m1n1, with the overlaid copy of every device tree an
 # overlay applies to: over the DTBS the configuration already set, or, with
-# none set, over the newest kernel's device trees; otherwise leaves DTBS as it
-# was. The copies and their manifest land in OMARCHY_DTB_OVERLAYS_OUTDIR.
+# none set, over the newest kernel's device trees. With overlays installed and
+# supported it always assigns DTBS, the expanded list even when no overlay
+# applies, so a later ': ${DTBS:=...}' no longer fires; otherwise it leaves
+# DTBS as it was. The copies and their manifest land in
+# OMARCHY_DTB_OVERLAYS_OUTDIR. OMARCHY_DTB_OVERLAYS_CALLED records the call.
 dtb_overlays_update_m1n1() {
   local root="${OMARCHY_DTB_OVERLAYS_ROOT:-}" modules outdir
+  # shellcheck disable=SC2034 # read by the boot check after the configuration
+  OMARCHY_DTB_OVERLAYS_CALLED=1
   outdir=$(dtb_overlays_outdir)
   [ "${OMARCHY_DTB_OVERLAYS:-1}" != 0 ] || return 0
   [ -n "$(dtb_overlays_list)" ] || return 0
   if ! dtb_overlays_supported "$root/usr/bin/update-m1n1"; then
-    echo "dtb-overlays: /usr/bin/update-m1n1 has a DTBS default this does not reproduce; device tree overlays are not applied" >&2
+    dtb_overlays_note "/usr/bin/update-m1n1 has a DTBS default this does not reproduce; device tree overlays are not applied"
     return 0
   fi
   if ! dtb_overlays_tools; then
-    echo "dtb-overlays: device tree overlays need dtc 1.7.1 or newer (dtc, fdtoverlay and fdtget); install or update dtc" >&2
+    dtb_overlays_note "device tree overlays need dtc 1.7.1 or newer (dtc, fdtoverlay and fdtget); install or update dtc"
     return 0
   fi
   if [ -n "${DTBS:-}" ] && [ -d "$root$DTBS" ] && grep -Fq -- '-d "$DTBS"' "$root/usr/bin/update-m1n1"; then

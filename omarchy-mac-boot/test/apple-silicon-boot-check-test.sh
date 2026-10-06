@@ -171,8 +171,12 @@ exit 0
 SH
 # The dtc tools on the fixture's device trees (magic, size, then a text body):
 # fdtoverlay appends "overlay NAME" to the body, dtc prints or accepts it, and
-# no fixture overlay names skip-if-compatible.
-cat >"$stub_bin/fdtoverlay" <<'SH'
+# no fixture overlay names skip-if-compatible. They live in the fixture root's
+# /usr/bin, where the check and update-m1n1 look first with a root set; dtc
+# reports the version in the dtc-version file beside it.
+tools_src="$test_tmp/dtc-tools"
+mkdir -p "$tools_src"
+cat >"$tools_src/fdtoverlay" <<'SH'
 #!/bin/bash
 [[ $1 == -i && $3 == -o ]] || exit 1
 body="$(tail -c +9 "$2")"$'\n'"overlay ${5##*/}"$'\n'
@@ -183,18 +187,25 @@ size=$(( 8 + ${#body} ))
   printf '%s' "$body"
 } >"$4"
 SH
-cat >"$stub_bin/dtc" <<'SH'
+cat >"$tools_src/dtc" <<'SH'
 #!/bin/bash
-[[ $1 != --version ]] || { echo "Version: DTC v${TEST_DTC_VERSION:-1.8.1}"; exit 0; }
+[[ $1 != --version ]] || { echo "Version: DTC v$(cat "${0%/*}/dtc-version")"; exit 0; }
 file=${!#}
 [[ $(od -An -tx1 -N4 "$file" | tr -d ' \n') == d00dfeed ]] || exit 1
 [[ " $* " != *" -O dts "* ]] || tail -c +9 "$file"
 SH
-cat >"$stub_bin/fdtget" <<'SH'
+cat >"$tools_src/fdtget" <<'SH'
 #!/bin/bash
 exit 1
 SH
-chmod +x "$stub_bin"/*
+chmod +x "$stub_bin"/* "$tools_src"/*
+
+# Puts the dtc tools, at dtc VERSION, in the fixture root.
+dtc_tools() {
+  mkdir -p "$root/usr/bin"
+  cp "$tools_src"/* "$root/usr/bin/"
+  printf '%s\n' "$1" >"$root/usr/bin/dtc-version"
+}
 
 # update-m1n1 as asahi-scripts 20260127.1 ships it, with the DTBS default ALARM adds.
 write_update_m1n1() {
@@ -334,6 +345,7 @@ system() {
   printf 'u-boot\n' >"$root/usr/lib/asahi-boot/u-boot-nodtb.bin"
   printf '# options\nchosen.asahi,efi-system-partition=1234\ndisplay=2560x1600\n   mitigations=off\nunknown=1\n\n' >"$root/etc/m1n1.conf"
   write_update_m1n1
+  dtc_tools 1.8.1
   printf '%s\n' "$kernel" "$kernel-headers" "$bootloader" uboot-asahi >"$test_tmp/files/installed"
   {
     printf '/usr/\n/usr/lib/\n/usr/lib/modules/\n/usr/lib/modules/%s/\n/usr/lib/modules/%s/vmlinuz\n' "$kver" "$kver"
@@ -372,7 +384,6 @@ run_check() {
     TEST_QKK_FAIL="${TEST_QKK_FAIL:-}" \
     TEST_QKK_DEPMOD="${TEST_QKK_DEPMOD:-}" \
     TEST_QKK_NODB="${TEST_QKK_NODB:-}" \
-    TEST_DTC_VERSION="${TEST_DTC_VERSION:-}" \
     OMARCHY_BOOT_CHECK_ROOT="$root" \
     OMARCHY_BOOT_CHECK_UNAME="${TEST_UNAME:-$kver}" \
     OMARCHY_APPLE_SILICON_CHANNEL_ROOT="$root" \
@@ -402,6 +413,69 @@ expect_fail() {
   grep -Fq "$message" "$test_tmp/err" || fail "$description is explained" "$(cat "$test_tmp/err")"
   mounts_were_read_only "$description"
 }
+
+# The check with an empty root, as on a real Mac: the fixture moves onto the
+# container's own filesystem, at its real paths. Only CI runs these rows, as
+# root in its throwaway Arch container (OMARCHY_TEST_SYSTEM_ROOT=1), and they
+# refuse to overwrite any file that already exists. update-m1n1 and the dtc
+# tools that run are the real ones on that filesystem.
+if [[ ${OMARCHY_TEST_SYSTEM_ROOT:-} == 1 ]]; then
+  (( EUID == 0 )) && [[ -f /.dockerenv ]] || fail "the empty-root rows run only as root in a throwaway container"
+  system linux-aurora
+  rm "$root/usr/bin/dtc" "$root/usr/bin/fdtoverlay" "$root/usr/bin/fdtget" "$root/usr/bin/dtc-version"
+  for dtb in "${dtbs[@]}"; do
+    name=${dtb##*/}
+    dtc -q -I dts -O dtb -o "$root$dtb" - <<DTS
+/dts-v1/;
+/ {
+  compatible = "apple,${name%.dtb}", "apple,${name%%-*}";
+  #address-cells = <2>;
+  #size-cells = <2>;
+  soc { compatible = "simple-bus"; #address-cells = <2>; #size-cells = <2>; ranges; };
+};
+DTS
+  done
+  write_boot_bin "${dtbs[@]}"
+  cp "$ROOT/files/etc/default/update-m1n1" "$root/etc/default/update-m1n1"
+  mkdir -p "$root/usr/lib/omarchy-mac/boot" "$root/usr/share/asahi-scripts" "$root/usr/lib/omarchy-mac-boot/dtb-overlays"
+  cp "$ROOT/lib/dtb-overlays.sh" "$root/usr/lib/omarchy-mac/boot/dtb-overlays.sh"
+  : >"$root/usr/share/asahi-scripts/functions.sh"
+  while IFS= read -r path; do
+    [[ ! -e /$path && ! -L /$path ]] || fail "the empty-root rows would overwrite /$path"
+  done < <(cd "$root" && find usr etc boot var -type f -o -type l)
+  for top in usr etc boot var; do
+    cp -a "$root/$top/." "/$top/"
+  done
+  root=""
+
+  run_check
+  (( status == 0 )) || fail "the check with an empty root and the default DTBS glob passes" "status $status: $(cat "$test_tmp/err")"
+  [[ ! -s $mounts ]] || fail "the empty-root check leaves nothing mounted" "$(cat "$mounts")"
+
+  mkdir /usr/lib/omarchy-mac-boot/dtb-overlays/t8103
+  dtc -q -@ -I dts -O dtb -o /usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo - <<'DTS' ||
+/dts-v1/;
+/plugin/;
+/ {
+  fragment@0 {
+    target-path = "/soc";
+    __overlay__ { ane@2000 { compatible = "apple,t8103-ane"; reg = <0 0x2000 0 0x100>; }; };
+  };
+};
+DTS
+    fail "the real dtc compiles the test overlay"
+  printf '/usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo omarchy-ane\n' >"$test_tmp/files/owners"
+  /bin/sh /usr/bin/update-m1n1 /boot/efi/m1n1/boot.bin
+  mv /boot/efi/m1n1/boot.bin.new /boot/efi/m1n1/boot.bin
+  [[ $(cat /run/omarchy-dtb-overlays/manifest) == "overlay3 "*"/modules/$kver/dtbs/t8103-j274.dtb" ]] ||
+    fail "the real update-m1n1 overlays the t8103 device tree" "$(cat /run/omarchy-dtb-overlays/manifest)"
+  run_check
+  (( status == 0 )) || fail "the check with an empty root vouches the overlaid image" "status $status: $(cat "$test_tmp/err")"
+  ! grep -Fq "Apple Silicon boot check: warning:" "$test_tmp/err" ||
+    fail "the empty-root check prints no warning" "$(cat "$test_tmp/err")"
+  pass "with an empty root, the check globs the default DTBS and vouches the image the real update-m1n1 overlays"
+  exit 0
+fi
 
 # Both kernel and bootloader pairs, named or detected.
 system linux-aurora
@@ -638,8 +712,7 @@ run_update_m1n1() {
     "$root/etc/default/update-m1n1" >"$test_tmp/update-m1n1-config"
   OMARCHY_DTB_OVERLAYS_ROOT=$root \
   OMARCHY_DTB_OVERLAYS_OUTDIR=$test_tmp/expected-out \
-  TEST_DTC_VERSION="${TEST_DTC_VERSION:-1.8.1}" \
-  PATH="$stub_bin:$PATH" \
+  PATH="$root/usr/bin:/usr/bin:/bin" \
   UPDATE_M1N1_TEST_ROOT=$root \
   LANG="${TEST_LANG:-C}" \
     /bin/sh "$test_tmp/update-m1n1-runnable" "$1"
@@ -689,7 +762,7 @@ matrix_row() {
     [[ -z $post ]] || printf '%s\n' "$post"
   } >"$root/etc/default/update-m1n1"
   [[ $dtbs_state == directory ]] && add_directory_expansion
-  [[ $dtc == old ]] && TEST_DTC_VERSION=1.6.1
+  [[ $dtc == old ]] && dtc_tools 1.6.1
   if [[ $dtbs_state == 'append after' ]]; then
     run_check --boot-chain
     expect_fail "$label" "device tree /x.dtb does not exist"
@@ -700,7 +773,7 @@ matrix_row() {
     grep -Fq "Apple Silicon boot check: warning:" "$test_tmp/err" &&
       fail "spurious warning in the $label row" "$(cat "$test_tmp/err")"
   fi
-  unset TEST_DTC_VERSION TEST_LANG
+  unset TEST_LANG
 }
 for overlays in none applies none-applies; do
   for optout in none '=0' quoted; do
@@ -724,6 +797,61 @@ expect_pass "a merged device tree order under a non-C locale"
 grep -Fq "Apple Silicon boot check: warning:" "$test_tmp/err" &&
   fail "spurious warning under the non-C locale" "$(cat "$test_tmp/err")"
 pass "the matrix of configurations vouches the image the real library and update-m1n1 build"
+
+# Configurations read the way update-m1n1 reads them: a line that also sets or
+# unsets OMARCHY_DTB_OVERLAYS_OUTDIR keeps the rest of what it does, the call
+# counts only when it runs, and the configuration's own stderr is no library note.
+packaged=$(cat "$ROOT/files/etc/default/update-m1n1")
+config_row() {
+  local label=$1 config=$2 warning=${3:-}
+  system linux-aurora
+  mkdir -p "$root/usr/lib/omarchy-mac-boot/dtb-overlays/t8103"
+  printf 'overlay\n' >"$root/usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo"
+  printf '/usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo omarchy-ane\n' >"$test_tmp/files/owners"
+  printf '%s\n' "$config" >"$root/etc/default/update-m1n1"
+  run_update_m1n1 "$esp/m1n1/boot.bin" 2>/dev/null
+  rm -rf "$root/run/omarchy-dtb-overlays"
+  run_check --boot-chain
+  expect_pass "$label"
+  if [[ -n $warning ]]; then
+    grep -Fq "$warning" "$test_tmp/err" || fail "$label is explained" "$(cat "$test_tmp/err")"
+  elif grep -Fq "Apple Silicon boot check: warning:" "$test_tmp/err"; then
+    fail "no spurious warning: $label" "$(cat "$test_tmp/err")"
+  fi
+}
+two="${dtbs[2]} ${dtbs[0]}"
+config_row "a DTBS on the line that sets OMARCHY_DTB_OVERLAYS_OUTDIR" \
+  "OMARCHY_DTB_OVERLAYS_OUTDIR=$test_tmp/elsewhere DTBS=\"$two\""$'\n'"$packaged"
+config_row "a DTBS on the line that unsets OMARCHY_DTB_OVERLAYS_OUTDIR" \
+  "unset OMARCHY_DTB_OVERLAYS_OUTDIR; DTBS=\"$two\""$'\n'"$packaged"
+config_row "a call in a branch that never runs" \
+  $'export LC_ALL=C\n. /usr/lib/omarchy-mac/boot/dtb-overlays.sh\nif false; then\n  dtb_overlays_update_m1n1\nfi' \
+  "does not apply the device tree overlays"
+config_row "a call that is not at the start of its line" \
+  $'export LC_ALL=C\n. /usr/lib/omarchy-mac/boot/dtb-overlays.sh && dtb_overlays_update_m1n1'
+config_row "a configuration that writes to stderr itself" \
+  "echo 'dtb-overlays: a note from the configuration' >&2"$'\n'"$packaged"
+! grep -Fq "a note from the configuration" "$test_tmp/err" ||
+  fail "the configuration's own stderr is not replayed as a library note" "$(cat "$test_tmp/err")"
+pass "the configuration copy keeps lines that touch the outdir, counts the call only when it runs, and replays only library notes"
+
+# dtb_list with the empty root of a real system: every word globs once, an
+# unmatched glob stays literal as in update-m1n1, and the library's copies pass through.
+(
+  # shellcheck source=/dev/null
+  source <(sed -n '/^dtb_list() {/,/^}/p' "$check")
+  root="" dtbs_out=$test_tmp/copies real=$test_tmp/real-dtbs
+  mkdir -p "$real/apple"
+  : >"$real/apple/t6000-j314s.dtb"
+  : >"$real/apple/t6020-j414s.dtb"
+  : >"$real/t8103-j274.dtb"
+  # shellcheck disable=SC2034 # dtb_list reads it
+  DTBS="$real/apple/t60*.dtb $real/t8103-j274.dtb $dtbs_out/overlay3 $real/none*.dtb"
+  mapfile -t got < <(dtb_list C)
+  [[ ${got[*]} == "$real/apple/t6000-j314s.dtb $real/apple/t6020-j414s.dtb $real/t8103-j274.dtb $dtbs_out/overlay3 $real/none*.dtb" ]] ||
+    fail "with an empty root, dtb_list globs each DTBS word" "${got[*]}"
+)
+pass "with an empty root, dtb_list globs every DTBS word the way update-m1n1 does"
 
 # update-m1n1's defaults: := fills unset and empty settings alike.
 for config in '' 'DTBS=\nSOURCE=""\n' 'CONFIG=\nM1N1=\nU_BOOT=\n' 'M1N1_UPDATE_DISABLED=\n'; do
