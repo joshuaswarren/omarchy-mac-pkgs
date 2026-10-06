@@ -599,7 +599,7 @@ if [[ -e $config_file ]]; then
       -e '/OMARCHY_DTB_OVERLAYS_OUTDIR/d' \
       "$config_file" >"$workdir/config-real" || fail "/etc/default/update-m1n1 cannot be read"
   rm -rf "$dtbs_out"
-  DTBS=$(env -i PATH="$PATH" LANG=${LANG:-C} TEST_DTC_VERSION=${TEST_DTC_VERSION:-} \
+  env -i PATH="$PATH" LANG=${LANG:-C} TEST_DTC_VERSION=${TEST_DTC_VERSION:-} \
     OMARCHY_DTB_OVERLAYS_ROOT=$root \
     OMARCHY_DTB_OVERLAYS_OUTDIR=$dtbs_out \
     /bin/sh -c '
@@ -607,7 +607,7 @@ if [[ -e $config_file ]]; then
       . "$1" >/dev/null 2>"$3"
       printf "%s=%s\0" DTBS "${DTBS-}" SOURCE "${SOURCE-}" M1N1 "${M1N1-}" U_BOOT "${U_BOOT-}" CONFIG "${CONFIG-}" M1N1_UPDATE_DISABLED "${M1N1_UPDATE_DISABLED-}"
     ' _ "$workdir/config-real" "$overlay_lib" "$library_stderr" >"$workdir/config" ||
-    fail "/etc/default/update-m1n1 cannot be read")
+    fail "/etc/default/update-m1n1 cannot be read"
   while IFS= read -r -d '' entry; do
     value=${entry#*=}
     case "${entry%%=*}" in
@@ -682,24 +682,22 @@ grep -Fxq -- "$m1n1_file" "$workdir/bootloader-files" || fail "M1N1 $M1N1 is not
 
 # Split and globbed the way update-m1n1's unquoted $DTBS is, in the C collation
 # /etc/default/update-m1n1 pins. The library's copies in the workdir pass
-# through untouched; everything else resolves under the root.
+# through untouched. The library prints a tree it left alone with the root in
+# front; that root comes off first, so every word globs under the root once,
+# the same way whether the root is a test fixture or the empty real one.
 dtb_list() {
   local LC_ALL=$1 words word matches
   set -f
   read -r -d '' -a words <<<"$DTBS" || true
   set +f
   for word in "${words[@]}"; do
-    case $word in
-      "$dtbs_out/"* | "$root"/*)
-        printf '%s\n' "$word"
-        ;;
-      *)
-        set +f
-        matches=("$root"$word)
-        set -f
-        printf '%s\n' "${matches[@]#"$root"}"
-        ;;
-    esac
+    if [[ $word == "$dtbs_out/"* ]]; then
+      printf '%s\n' "$word"
+      continue
+    fi
+    [[ $word != "$root"/* ]] || word=${word#"$root"}
+    matches=("$root"$word)
+    printf '%s\n' "${matches[@]#"$root"}"
   done
 }
 mapfile -t dtbs < <(dtb_list C)
@@ -718,9 +716,6 @@ for i in "${!dtbs[@]}"; do
   base=${entry##*/}
   if [[ $entry == "$dtbs_out/"* && -n ${overlay_src[$base]:-} ]]; then
     dtbs[i]=${overlay_src[$base]}
-    paths[i]=$entry
-  elif [[ $entry == "$root"/* ]]; then
-    dtbs[i]=${entry#"$root"}
     paths[i]=$entry
   else
     paths[i]=$root$entry

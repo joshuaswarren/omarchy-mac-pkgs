@@ -631,6 +631,7 @@ run_update_m1n1() {
     -e "s|/lib/modules/|$root/lib/modules/|g"
     -e "s|/etc/m1n1.conf|$root/etc/m1n1.conf|g"
     -e "s|/run/m1n1.conf|$test_tmp/m1n1.conf|g"
+    -e 's|DTBS="\${DTBS}/apple/t6\*\.dtb \${DTBS}/apple/t81\*\.dtb"|DTBS="${UPDATE_M1N1_TEST_ROOT}${DTBS}/apple/t6*.dtb ${UPDATE_M1N1_TEST_ROOT}${DTBS}/apple/t81*.dtb"|'
   )
   sed "${translate[@]}" "$root/usr/bin/update-m1n1" >"$test_tmp/update-m1n1-runnable"
   sed -e "s|/usr/lib/omarchy-mac/boot/dtb-overlays.sh|$ROOT/lib/dtb-overlays.sh|g" \
@@ -694,9 +695,7 @@ matrix_row() {
     expect_fail "$label" "device tree /x.dtb does not exist"
   else
     run_update_m1n1 "$esp/m1n1/boot.bin"
-    echo "DEBUG row [$label] esp-size: [$(stat -c %s "$esp/m1n1/boot.bin")] manifest: [$(cat "$test_tmp/expected-out/manifest" 2>&1 | head -1)]" >&2
     run_check --boot-chain
-    echo "DEBUG row [$label] status: [$status] err: [$(head -c 160 "$test_tmp/err")]" >&2
     expect_pass "$label"
     grep -Fq "Apple Silicon boot check: warning:" "$test_tmp/err" &&
       fail "spurious warning in the $label row" "$(cat "$test_tmp/err")"
@@ -705,7 +704,7 @@ matrix_row() {
 }
 for overlays in none applies none-applies; do
   for optout in none '=0' quoted; do
-    for dtbs_state in above after ':= after' 'append after' 'unset after' 'same value after'; do
+    for dtbs_state in above after ':= after' 'append after' 'unset after' 'same value after' directory; do
       for dtc in ok old; do
         matrix_row "$overlays" "$optout" "$dtbs_state" "$dtc"
       done
