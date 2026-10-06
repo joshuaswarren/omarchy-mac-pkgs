@@ -83,13 +83,31 @@ cat "$M1N1" $DTBS >"${TARGET}.new"
 SH
 
 mapfile -t result < <(dtb_overlays_apply "$tmp/out" "${stock[@]}")
-echo "DEBUG res=[${result[*]}] stock=[${stock[*]}] out=[$(ls -A "$tmp/out")]" >&2
 [[ ${result[*]} == "$dtbs/t6001-j316c.dtb $dtbs/t8103-j274.dtb $dtbs/t8103-j293.dtb" && $(ls -A "$tmp/out") == manifest && ! -s "$tmp/out/manifest" ]] ||
   fail "with no overlays, every device tree stays the kernel's"
 unset DTBS
 dtb_overlays_update_m1n1
 [[ -z ${DTBS:-} ]] || fail "with no overlays, update-m1n1 keeps its DTBS default"
 pass "no overlays change nothing"
+
+# A DTBS word globs under the root only: a host tree at the same path is not
+# what the word names.
+mkdir -p "$tmp/hostglob" "$root$tmp/hostglob"
+cp "$dtbs/t6001-j316c.dtb" "$tmp/hostglob/x9001-host.dtb"
+cp "$dtbs/t6001-j316c.dtb" "$root$tmp/hostglob/x9001-root.dtb"
+mapfile -t result < <(dtb_overlays_apply "$tmp/out" "$tmp/hostglob/x9001-*.dtb")
+[[ ${result[*]} == "$root$tmp/hostglob/x9001-root.dtb" ]] || fail "a DTBS word globs under the root, not on the host: ${result[*]}"
+
+# The empty root of a real system: each word is a tree's own path and globs
+# once. The x9001 prefix names no installed overlay, so the overlays on a Mac
+# that builds this package cannot apply here.
+mkdir -p "$tmp/real" "$tmp/out-real"
+cp "$dtbs/t6001-j316c.dtb" "$tmp/real/x9001-a.dtb"
+cp "$dtbs/t6001-j316c.dtb" "$tmp/real/x9001-b.dtb"
+mapfile -t result < <(OMARCHY_DTB_OVERLAYS_ROOT='' dtb_overlays_apply "$tmp/out-real" "$tmp/real/x9001-*.dtb $tmp/real/x9001-a.dtb" "$tmp/real/none-*.dtb")
+[[ ${result[*]} == "$tmp/real/x9001-a.dtb $tmp/real/x9001-b.dtb $tmp/real/x9001-a.dtb $tmp/real/none-*.dtb" && ! -s "$tmp/out-real/manifest" ]] ||
+  fail "with an empty root, every DTBS word globs once, and one that matches nothing stays literal: ${result[*]}"
+pass "DTBS words glob once, under the root, empty or not"
 
 overlay t8103 omarchy-ane apple,t8103-ane skip
 mapfile -t result < <(dtb_overlays_apply "$tmp/out" "${stock[@]}")
