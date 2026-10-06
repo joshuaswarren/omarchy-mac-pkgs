@@ -16,15 +16,19 @@
 # dtc cannot read the result, that device tree stays as the kernel shipped it.
 # With no overlays, nothing changes.
 #
-# /etc/default/update-m1n1 calls dtb_overlays_update_m1n1 to set DTBS, and
-# omarchy-apple-silicon-boot-check calls dtb_overlays_apply to rebuild the same
-# image. OMARCHY_DTB_OVERLAYS=0 turns the update-m1n1 side off, so the boot
-# check can read the configuration without building anything.
-# OMARCHY_DTB_OVERLAYS_ROOT prefixes every path read or written (tests, and the
-# boot check's root).
+# /etc/default/update-m1n1 calls dtb_overlays_update_m1n1 to set DTBS; the
+# boot check sources the same configuration the same way to rebuild the same
+# image. OMARCHY_DTB_OVERLAYS_ROOT prefixes every path read or written, and
+# OMARCHY_DTB_OVERLAYS_OUTDIR overrides where the copies and their manifest
+# land (both for tests and for the boot check's workdir). OMARCHY_DTB_OVERLAYS=0
+# turns the merge off.
 
 dtb_overlays_dir() {
   printf '%s\n' "${OMARCHY_DTB_OVERLAYS_ROOT:-}/usr/lib/omarchy-mac-boot/dtb-overlays"
+}
+
+dtb_overlays_outdir() {
+  printf '%s\n' "${OMARCHY_DTB_OVERLAYS_OUTDIR:-${OMARCHY_DTB_OVERLAYS_ROOT:-}/run/omarchy-dtb-overlays}"
 }
 
 # The overlays, one path per line, in the order they apply.
@@ -128,33 +132,49 @@ dtb_overlays_build() {
   mv -f -- "$out.base" "$out"
 }
 
-# Prints each DTB, or the copy of it in OUTDIR that carries its overlays, one
-# per line and in the same order. The copies name their place in the list, not
-# their file name: two device trees with the same file name get different
-# copies in OUTDIR.
+# Applies the overlays to every device tree the DTBS words expand to under
+# the root, and writes a manifest in the outdir: overlayN to the source tree,
+# one line per expanded tree, in apply order. Prints the list that replaces
+# DTBS: the copy for a tree the overlays changed, the tree itself otherwise.
 dtb_overlays_apply() {
-  local outdir="$1" overlays dtb n=0
+  local root="${OMARCHY_DTB_OVERLAYS_ROOT:-}" outdir="$1" overlays src out n=0 word dtb
   shift
   overlays=$(dtb_overlays_list)
   if [ -z "$overlays" ] || ! dtb_overlays_tools; then
     overlays=""
   fi
-  for dtb in "$@"; do
-    n=$(( n + 1 ))
-    if [ -n "$overlays" ] && dtb_overlays_build "$dtb" "$outdir/overlay$n" "$overlays"; then
-      printf '%s\n' "$outdir/overlay$n"
-    else
-      printf '%s\n' "$dtb"
-    fi
+  : >"$outdir/manifest"
+  # Every DTBS word is a device tree path: glue the root to each of its
+  # fields, then let the fields glob. A word that matches nothing stays a
+  # glued literal and fails the copy, like a missing tree does for real.
+  for word in "$@"; do
+    glued=""
+    for part in $word; do
+      glued="$glued $root$part"
+    done
+    set +f
+    for dtb in $glued; do
+      n=$(( n + 1 ))
+      out=$outdir/overlay$n
+      if [ -n "$overlays" ] && dtb_overlays_build "$dtb" "$out" "$overlays"; then
+        printf '%s %s\n' "${out##*/}" "${dtb#"$root"}" >>"$outdir/manifest"
+        printf '%s\n' "$out"
+      else
+        printf '%s\n' "$dtb"
+      fi
+    done
+    set -f
   done
+  set +f
 }
 
 # Sets DTBS for update-m1n1, with the overlaid copy of every device tree an
 # overlay applies to: over the DTBS the configuration already set, or, with
-# none set, over the newest kernel's device trees; otherwise leaves DTBS as it was.
+# none set, over the newest kernel's device trees; otherwise leaves DTBS as it
+# was. The copies and their manifest land in OMARCHY_DTB_OVERLAYS_OUTDIR.
 dtb_overlays_update_m1n1() {
-  local root="${OMARCHY_DTB_OVERLAYS_ROOT:-}" modules outdir list="" path
-  outdir=$root/run/omarchy-dtb-overlays
+  local root="${OMARCHY_DTB_OVERLAYS_ROOT:-}" modules outdir
+  outdir=$(dtb_overlays_outdir)
   [ "${OMARCHY_DTB_OVERLAYS:-1}" != 0 ] || return 0
   [ -n "$(dtb_overlays_list)" ] || return 0
   if ! dtb_overlays_supported "$root/usr/bin/update-m1n1"; then
@@ -165,26 +185,17 @@ dtb_overlays_update_m1n1() {
     echo "dtb-overlays: device tree overlays need dtc 1.7.1 or newer (dtc, fdtoverlay and fdtget); install or update dtc" >&2
     return 0
   fi
-  # The same directory expansion newer update-m1n1 does, so the overlays also
-  # apply to a DTBS given as one directory.
-  if [ -d "${DTBS:-}" ] && grep -Fq -- '-d "$DTBS"' "$root/usr/bin/update-m1n1"; then
+  if [ -n "${DTBS:-}" ] && [ -d "$root$DTBS" ] && grep -Fq -- '-d "$DTBS"' "$root/usr/bin/update-m1n1"; then
     DTBS="$DTBS/apple/t6*.dtb $DTBS/apple/t81*.dtb"
   fi
   rm -rf -- "$outdir"
   mkdir -p -- "$outdir" || return 0
   if [ -n "${DTBS:-}" ]; then
-    # Expanded the way update-m1n1's unquoted $DTBS is.
-    # shellcheck disable=SC2086 # split and globbed the way update-m1n1 splits it
-    for path in $(dtb_overlays_apply "$outdir" $DTBS); do
-      list="$list $path"
-    done
+    DTBS=$(dtb_overlays_apply "$outdir" "$DTBS" | tr '\n' ' ')
   else
     modules=$(/bin/ls -d "$root"/lib/modules/*-ARCH | sort -rV | head -1)
-    for path in $(dtb_overlays_apply "$outdir" "$modules"/dtbs/*.dtb); do
-      list="$list $path"
-    done
+    modules=${modules#"$root"}
+    DTBS=$(dtb_overlays_apply "$outdir" "$modules/dtbs/*.dtb" | tr '\n' ' ')
   fi
-  case "$list" in
-    *" $outdir/"*) DTBS=${list# } ;;
-  esac
+  DTBS=${DTBS% }
 }
