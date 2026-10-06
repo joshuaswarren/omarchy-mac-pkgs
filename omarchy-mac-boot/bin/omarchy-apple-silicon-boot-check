@@ -583,30 +583,32 @@ for name in SOURCE M1N1 U_BOOT CONFIG; do
 done
 
 # What update-m1n1 builds from: the configuration sourced the way update-m1n1
-# sources it, with /bin/sh and the real library, the copies and their manifest
-# in the workdir. A configuration that touches OMARCHY_DTB_OVERLAYS_OUTDIR is
-# ignored (the lines are dropped from the copy), so the copies always land
-# where this check can read them. The library's own stderr notes are replayed
-# in the overlay section below.
-SOURCE="" M1N1="" U_BOOT="" CONFIG="" DTBS="" disabled=""
+# sources it, with /bin/sh, root's PATH and the real library, the copies and
+# their manifest in the workdir. The copy renames OMARCHY_DTB_OVERLAYS_OUTDIR
+# wherever the configuration names it, so a line that sets or unsets it keeps
+# the rest of what it does and the copies still land where this check reads
+# them. The configuration loads a shim of the library whose only change keeps
+# the library's notes, replayed below, apart from the configuration's own output.
+SOURCE="" M1N1="" U_BOOT="" CONFIG="" DTBS="" disabled="" overlays_called=""
 dtbs_out=$workdir/dtbs-out
-library_stderr=$workdir/library-stderr
+library_notes=$workdir/library-notes
 config_file=$(path /etc/default/update-m1n1)
-overlays_called=0
 if [[ -e $config_file ]]; then
-  grep -Eq '^[[:space:]]*dtb_overlays_update_m1n1([[:space:];|&]|$)' "$config_file" && overlays_called=1
-  sed -e "s|/usr/lib/omarchy-mac/boot/dtb-overlays.sh|$overlay_lib|" \
-      -e '/OMARCHY_DTB_OVERLAYS_OUTDIR/d' \
-      "$config_file" >"$workdir/config-real" || fail "/etc/default/update-m1n1 cannot be read"
-  rm -rf "$dtbs_out"
-  env -i PATH="$PATH" LANG=${LANG:-C} TEST_DTC_VERSION=${TEST_DTC_VERSION:-} \
+  printf '. %s\ndtb_overlays_note() {\n  printf "dtb-overlays: %%s\\n" "$*" >>%s\n}\n' \
+    "'$overlay_lib'" "'$library_notes'" >"$workdir/dtb-overlays.sh"
+  sed -E -e "s|/usr/lib/omarchy-mac/boot/dtb-overlays\.sh|$workdir/dtb-overlays.sh|g" \
+    -e 's/(^|[^A-Za-z0-9_])OMARCHY_DTB_OVERLAYS_OUTDIR([^A-Za-z0-9_]|$)/\1omarchy_boot_check_outdir_ignored\2/g' \
+    "$config_file" >"$workdir/config-real" || fail "/etc/default/update-m1n1 cannot be read"
+  rm -rf "$dtbs_out" "$library_notes"
+  env -i PATH="${root:+$root/usr/bin:}/usr/bin:/bin" LANG=${LANG:-C} \
     OMARCHY_DTB_OVERLAYS_ROOT=$root \
     OMARCHY_DTB_OVERLAYS_OUTDIR=$dtbs_out \
     /bin/sh -c '
-      DTBS=""; SOURCE=""; M1N1=""; U_BOOT=""; CONFIG=""; M1N1_UPDATE_DISABLED=""
-      . "$1" >/dev/null 2>"$3"
-      printf "%s=%s\0" DTBS "${DTBS-}" SOURCE "${SOURCE-}" M1N1 "${M1N1-}" U_BOOT "${U_BOOT-}" CONFIG "${CONFIG-}" M1N1_UPDATE_DISABLED "${M1N1_UPDATE_DISABLED-}"
-    ' _ "$workdir/config-real" "$overlay_lib" "$library_stderr" >"$workdir/config" ||
+      DTBS=""; SOURCE=""; M1N1=""; U_BOOT=""; CONFIG=""; M1N1_UPDATE_DISABLED=""; OMARCHY_DTB_OVERLAYS_CALLED=""
+      . "$1" >/dev/null 2>&1
+      printf "%s=%s\0" DTBS "${DTBS-}" SOURCE "${SOURCE-}" M1N1 "${M1N1-}" U_BOOT "${U_BOOT-}" CONFIG "${CONFIG-}" \
+        M1N1_UPDATE_DISABLED "${M1N1_UPDATE_DISABLED-}" OMARCHY_DTB_OVERLAYS_CALLED "${OMARCHY_DTB_OVERLAYS_CALLED-}"
+    ' _ "$workdir/config-real" >"$workdir/config" ||
     fail "/etc/default/update-m1n1 cannot be read"
   while IFS= read -r -d '' entry; do
     value=${entry#*=}
@@ -617,6 +619,7 @@ if [[ -e $config_file ]]; then
       CONFIG) CONFIG=$value ;;
       DTBS) DTBS=$value ;;
       M1N1_UPDATE_DISABLED) disabled=$value ;;
+      OMARCHY_DTB_OVERLAYS_CALLED) overlays_called=$value ;;
     esac
   done <"$workdir/config"
 fi
@@ -734,11 +737,10 @@ for overlay in "${overlays[@]}"; do
   pacman -Qoq "${overlay#"$root"}" >/dev/null 2>&1 ||
     fail "device tree overlay ${overlay#"$root"} is not owned by a package"
 done
-if (( ${#overlays[@]} )) && (( ! overlays_called )); then
+if (( ${#overlays[@]} )) && [[ $overlays_called != 1 ]]; then
   echo "Apple Silicon boot check: warning: /etc/default/update-m1n1 does not apply the device tree overlays, so update-m1n1 leaves them out; merge its .pacnew if there is one" >&2
 fi
-# The library's own notes about this configuration.
-[[ -s $library_stderr ]] && cat "$library_stderr" >&2
+[[ ! -s $library_notes ]] || cat "$library_notes" >&2
 declare -A dtb_file=()
 for i in "${!dtbs[@]}"; do
   dtb_file[${dtbs[$i]}]=${paths[$i]}
