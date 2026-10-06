@@ -132,10 +132,6 @@ CONF
   if (( ! menu_is_ours )); then
     sudo install -m600 "$limine_conf_source" "$esp/limine.conf" || limine_boot_fail "cannot install the Limine menu"
   fi
-  sudo sed -i -E 's/^#?[[:space:]]*timeout:.*/timeout: 3/' "$esp/limine.conf" || limine_boot_fail "cannot set the menu timeout"
-  if ! sudo grep -Eq '^timeout: ' "$esp/limine.conf"; then
-    printf 'timeout: 3\n' | sudo tee -a "$esp/limine.conf" >/dev/null || limine_boot_fail "cannot append the menu timeout"
-  fi
 
   limine_boots_uki() {
     sudo test -s "$esp/EFI/Linux/omarchy_$kernel.efi" && sudo grep -Fq "//$kernel" "$esp/limine.conf" &&

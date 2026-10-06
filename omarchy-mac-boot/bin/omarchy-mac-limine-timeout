@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# omarchy:summary=Keep Omarchy's Limine menu timeout on an Apple Silicon Mac
+# omarchy:requires-sudo=true
+# omarchy:hidden=true
+
+# Omarchy's limine.conf template ships `#timeout: 3`, and every menu reset
+# copies it over the ESP's menu: owner provisioning, the factory reset,
+# omarchy-refresh-limine. Limine then waits its built-in 5 s on every boot.
+# Linked as /etc/boot/hooks/pre.d/06-omarchy-mac-limine-timeout, this runs
+# before every limine-update, whose entry writes keep the line. A timeout the
+# owner set stays.
+
+set -uo pipefail
+
+limine_default=${OMARCHY_LIMINE_DEFAULT:-/etc/default/limine}
+timeout=3
+
+omarchy-mac-limine-active || exit 0
+esp=$(sed -n -E 's/^[[:space:]]*ESP_PATH=("([^"]*)"|'\''([^'\'']*)'\''|([^[:space:]#"'\'']*)).*/\2\3\4/p' "$limine_default" | tail -n 1)
+conf=$esp/limine.conf
+[[ -n $esp && -f $conf ]] || exit 0
+grep -q '^timeout:' "$conf" && exit 0
+
+if grep -Eq '^#[[:space:]]*timeout:' "$conf"; then
+  sed -i -E "0,/^#[[:space:]]*timeout:.*/s//timeout: $timeout/" "$conf"
+else
+  sed -i "1i timeout: $timeout" "$conf"
+fi || { echo "omarchy-mac-limine-timeout: cannot set the menu timeout in $conf" >&2; exit 1; }

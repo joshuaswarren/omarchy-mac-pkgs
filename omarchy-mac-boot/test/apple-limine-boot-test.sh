@@ -174,8 +174,7 @@ grep -Fxq 'BOOT_ORDER="linux-aurora, *, *fallback, Snapshots"' "$etc/limine" && 
 [[ -L $etc/boot/hooks/pre.d/20-omarchy-mac-cmdline ]] || fail "the command line hook runs before every UKI rebuild"
 [[ $(tr '\n' ' ' <"$calls") == "update-grub limine-update limine-snapper-sync "* ]] ||
   fail "GRUB is regenerated first, the UKI built before Limine is deployed, snapshots synced last" "$(cat "$calls")"
-grep -Fxq 'timeout: 3' "$esp/limine.conf" && grep -Fq 'interface_branding: Omarchy Bootloader' "$esp/limine.conf" ||
-  fail "Omarchy's Limine menu with a 3 s timeout"
+grep -Fq 'interface_branding: Omarchy Bootloader' "$esp/limine.conf" || fail "Omarchy's Limine menu"
 ! grep -q '^/GRUB' "$esp/limine.conf" || fail "the menu has no GRUB entry" "$(cat "$esp/limine.conf")"
 grep -Fq 'Exec = /usr/bin/omarchy-mac-limine-deploy' "$etc/pacman.d/hooks/81-omarchy-mac-limine-deploy.hook" ||
   fail "a pacman hook redeploys Limine when the package changes"
@@ -190,7 +189,6 @@ run || fail "a second run succeeds"
 ! grep -q '^/GRUB' "$esp/limine.conf" || fail "a leftover GRUB recovery entry is removed" "$(cat "$esp/limine.conf")"
 grep -q '^/+Omarchy$' "$esp/limine.conf" || fail "the Omarchy block survives the cleanup"
 [[ ! -e $etc/systemd/system/omarchy-mac-boot-sync.service ]] || fail "the experiment's resync unit is removed"
-(( $(grep -c '^timeout: 3$' "$esp/limine.conf") == 1 )) || fail "one timeout line"
 pass "re-running the leaf changes nothing that was right and cleans the experiment up"
 
 # A newer Limine package: the ESP follows, and GRUB's recovery image is never
