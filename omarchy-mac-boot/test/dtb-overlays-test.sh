@@ -72,7 +72,7 @@ board_dtb t6001-j316c.dtb j316c t6001
 board_dtb t8103-j274.dtb j274 t8103
 board_dtb t8103-j293.dtb j293 t8103
 board_dtb t8103-j293-kernel-ane.dtb j293 t8103 'ane@2000 { compatible = "apple,t8103-ane"; reg = <0 0x2000 0 0x100>; };'
-stock=("$dtbs/t6001-j316c.dtb" "$dtbs/t8103-j274.dtb" "$dtbs/t8103-j293.dtb")
+stock=("/lib/modules/$kver/dtbs/t6001-j316c.dtb" "/lib/modules/$kver/dtbs/t8103-j274.dtb" "/lib/modules/$kver/dtbs/t8103-j293.dtb")
 cp "$dtbs"/*.dtb "$tmp/"
 
 # update-m1n1 as Arch Linux ARM's asahi-scripts ships its DTBS default.
@@ -83,7 +83,9 @@ cat "$M1N1" $DTBS >"${TARGET}.new"
 SH
 
 mapfile -t result < <(dtb_overlays_apply "$tmp/out" "${stock[@]}")
-[[ ${result[*]} == "${stock[*]}" && -z $(ls -A "$tmp/out") ]] || fail "with no overlays, every device tree stays the kernel's"
+echo "DEBUG res=[${result[*]}] stock=[${stock[*]}] out=[$(ls -A "$tmp/out")]" >&2
+[[ ${result[*]} == "$dtbs/t6001-j316c.dtb $dtbs/t8103-j274.dtb $dtbs/t8103-j293.dtb" && $(ls -A "$tmp/out") == manifest && ! -s "$tmp/out/manifest" ]] ||
+  fail "with no overlays, every device tree stays the kernel's"
 unset DTBS
 dtb_overlays_update_m1n1
 [[ -z ${DTBS:-} ]] || fail "with no overlays, update-m1n1 keeps its DTBS default"
@@ -112,10 +114,10 @@ mkdir -p "$tmp/old-dtc"
 printf '#!/bin/bash\n[[ $1 == --version ]] && { echo "Version: DTC 1.6.1"; exit 0; }\nexec %q "$@"\n' "$(command -v dtc)" >"$tmp/old-dtc/dtc"
 chmod +x "$tmp/old-dtc/dtc"
 mapfile -t result < <(PATH="$tmp/old-dtc:$PATH" dtb_overlays_apply "$tmp/out" "${stock[@]}")
-[[ ${result[*]} == "${stock[*]}" ]] || fail "dtc 1.6.1 gets no overlays: ${result[*]}"
+[[ ${result[*]} == "$dtbs/t6001-j316c.dtb $dtbs/t8103-j274.dtb $dtbs/t8103-j293.dtb" ]] || fail "dtc 1.6.1 gets no overlays: ${result[*]}"
 pass "dtc older than 1.7.1 leaves every device tree the kernel's"
 
-mapfile -t result < <(dtb_overlays_apply "$tmp/out" "$dtbs/t8103-j293-kernel-ane.dtb")
+mapfile -t result < <(dtb_overlays_apply "$tmp/out" "${stock[2]%/*}/t8103-j293-kernel-ane.dtb")
 [[ ${result[0]} == "$dtbs/t8103-j293-kernel-ane.dtb" ]] ||
   fail "an overlay stays out of a device tree that already has its skip-if-compatible node"
 pass "a kernel device tree that has the node wins over the overlay"
@@ -150,7 +152,7 @@ pass "only a node with no status, \"okay\" or \"ok\" has the compatible"
 # overlay merges into the node and enables it in place.
 board_dtb t8103-j293-kernel-ane-disabled.dtb j293 t8103 \
   'ane@2000 { compatible = "apple,t8103-ane"; reg = <0 0x2000 0 0x100>; status = "disabled"; };'
-mapfile -t result < <(dtb_overlays_apply "$tmp/out" "$dtbs/t8103-j293-kernel-ane-disabled.dtb")
+mapfile -t result < <(dtb_overlays_apply "$tmp/out" "${stock[2]%/*}/t8103-j293-kernel-ane-disabled.dtb")
 [[ ${result[0]} == "$tmp/out/overlay1" ]] ||
   fail "a disabled kernel node does not keep the overlay out: ${result[*]}"
 has_ane "${result[0]}" apple,t8103-ane || fail "the overlaid tree carries the overlay's node"
@@ -181,7 +183,8 @@ overlay t8103-j293 zz-broken apple,t8103-extra "" /soc/missing@0
 rm -f "$tmp/out"/*
 mapfile -t result < <(dtb_overlays_apply "$tmp/out" "${stock[@]}" 2>"$tmp/err")
 [[ ${result[2]} == "$dtbs/t8103-j293.dtb" ]] || fail "a device tree an overlay does not apply to stays the kernel's"
-[[ -z $(ls -A "$tmp/out") ]] || fail "a failed overlay leaves no file behind: $(ls -A "$tmp/out")"
+[[ $(ls -A "$tmp/out") == manifest && ! -s "$tmp/out/manifest" ]] ||
+  fail "a failed overlay leaves no file behind: $(ls -A "$tmp/out")"
 grep -Fq "zz-broken.dtbo does not apply to t8103-j293.dtb" "$tmp/err" || fail "a failed overlay is reported: $(cat "$tmp/err")"
 pass "an overlay that does not apply leaves the kernel's device tree in place"
 rm -f "$overlays/t8103-j293/zz-broken.dtbo"
@@ -196,16 +199,17 @@ out=$root/run/omarchy-dtb-overlays
 [[ $DTBS == "$dtbs/t6001-j316c.dtb $dtbs/t8103-j274.dtb $out/overlay3" ]] ||
   fail "update-m1n1 takes the newest kernel's device trees with the overlaid one in its place: $DTBS"
 has_ane "$out/overlay3" apple,t8103-ane || fail "update-m1n1's copy carries the overlay"
+grep -Fxq "overlay3 /lib/modules/$kver/dtbs/t8103-j293.dtb" "$out/manifest" || fail "the manifest maps the copy to its kernel tree: $(cat "$out/manifest")"
 # A DTBS set before the call: the overlays merge over it, in its order, and a
 # tree no overlay applies to stays as it is.
-DTBS="$dtbs/t8103-j293.dtb $dtbs/t6001-j316c.dtb /custom.dtb"
+DTBS="/lib/modules/$kver/dtbs/t8103-j293.dtb /lib/modules/$kver/dtbs/t6001-j316c.dtb /custom.dtb"
 dtb_overlays_update_m1n1
-[[ $DTBS == "$out/overlay1 $dtbs/t6001-j316c.dtb /custom.dtb" ]] ||
+[[ $DTBS == "$out/overlay1 $dtbs/t6001-j316c.dtb $root/custom.dtb" ]] ||
   fail "the overlays merge over a DTBS set before the call: $DTBS"
 has_ane "$out/overlay1" apple,t8103-ane || fail "the merged copy carries the overlay"
 DTBS=/custom.dtb
 dtb_overlays_update_m1n1
-[[ $DTBS == /custom.dtb ]] || fail "a DTBS no overlay applies to stays as it is"
+[[ $DTBS == "$root/custom.dtb" ]] || fail "a DTBS no overlay applies to stays as it is"
 unset DTBS
 pass "the overlays merge over a DTBS the call finds set"
 # OMARCHY_DTB_OVERLAYS=0 turns the merge off, for a device tree an overlay
@@ -220,7 +224,7 @@ pass "OMARCHY_DTB_OVERLAYS=0 leaves a DTBS the overlays apply to alone"
 sed -i '/^cat "\$M1N1" \$DTBS/i if [ -d "$DTBS" ]; then\n    DTBS="${DTBS}/apple/t6*.dtb ${DTBS}/apple/t81*.dtb"\nfi\n' "$root/usr/bin/update-m1n1"
 mkdir "$dtbs/apple"
 mv "$dtbs"/*.dtb "$dtbs/apple/"
-DTBS=$dtbs
+DTBS=/lib/modules/$kver/dtbs
 dtb_overlays_update_m1n1
 [[ $DTBS == "$dtbs/apple/t6001-j316c.dtb $dtbs/apple/t8103-j274.dtb $out/overlay3" ]] ||
   fail "a directory DTBS is expanded before the overlays apply: $DTBS"
