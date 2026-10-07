@@ -24,6 +24,8 @@ BOOT_UUID=4f4d5801-424f-4f54-8000-000000000001
 
 # shellcheck source=boot-image-layout.sh
 source "$MAC_BOOT_ROOT/usr/lib/omarchy-mac/boot/boot-image-layout.sh"
+# shellcheck source=grub-keep.sh
+source "$MAC_BOOT_ROOT/usr/lib/omarchy-mac/boot/grub-keep.sh"
 
 log_step() { printf '%s\n' "$*" >&2; }
 
@@ -115,11 +117,6 @@ limine_mac() {
   [[ -e $LIMINE_GATE && -f $LIMINE_DEFAULT ]]
 }
 
-# The test omarchy-mac-boot-update uses to decide whether GRUB is kept current.
-grub_tools_present() {
-  [[ -x $MAC_BOOT_ROOT/usr/bin/grub-probe && -x $MAC_BOOT_ROOT/usr/bin/grub-mkconfig ]]
-}
-
 # The initramfs that asks for the owner's password must load the vendor
 # firmware first, or an M2 or later laptop's keyboard cannot type it.
 initramfs_orders_firmware() {
@@ -128,8 +125,10 @@ initramfs_orders_firmware() {
   image_orders_firmware "$MAC_BOOT_ROOT/boot/initramfs-$kernel.img" "/boot/initramfs-$kernel.img"
 }
 
-# The same check on the image this Mac boots: on a Limine Mac, the initramfs
-# inside its UKI, which the re-key rebuilds without /boot's image.
+# The images this Mac boots: on a Limine Mac the initramfs inside its UKI,
+# and /boot's image besides wherever GRUB is kept, because GRUB's retained
+# entries boot it -- also where OMARCHY_MAC_BOOT_UPDATE_GRUB only suppressed
+# the rebuild. Elsewhere GRUB boots /boot's image.
 boot_image_orders_firmware() {
   local kernel uki image status=0
   limine_mac || {
@@ -146,6 +145,9 @@ boot_image_orders_firmware() {
     status=1
   fi
   rm -f "$image"
+  if grub_tools_present; then
+    image_orders_firmware "$MAC_BOOT_ROOT/boot/initramfs-$kernel.img" "/boot/initramfs-$kernel.img" || status=1
+  fi
   return "$status"
 }
 
@@ -334,7 +336,7 @@ provision_prepare() {
 
   luks_device_found ||
     refuse "Could not find the encrypted disk that /etc/crypttab names."
-  initramfs_orders_firmware ||
+  boot_image_orders_firmware ||
     refuse "The boot image would ask for the disk password before the keyboard firmware loads."
   esp_selected ||
     refuse "The EFI partition this Mac boots from is not where its boot files are written."
