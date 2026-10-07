@@ -69,7 +69,11 @@ SH
 cat >"$stub_bin/build-image" <<SH
 #!/bin/bash
 image=\$1
-if [[ -e $test_tmp/build-without-firmware || ( \${2:-} == uki && -e $test_tmp/uki-without-firmware ) ]]; then
+# grub-without-firmware leaves the firmware out of /boot's GRUB image only,
+# the way a build can leave one image behind.
+if [[ -e $test_tmp/build-without-firmware ]] \\
+  || { [[ \${2:-} == uki && -e $test_tmp/uki-without-firmware ]]; } \\
+  || { [[ \${2:-} != uki && -e $test_tmp/grub-without-firmware ]]; }; then
   echo ./usr/lib/systemd/system-generators/systemd-cryptsetup-generator >"\$image"
 else
   printf '%s\n' "$firmware_listing" >"\$image"
@@ -122,6 +126,12 @@ cat >"$stub_bin/omarchy-mac-esp" <<'SH'
 [[ -n ${TEST_ESP-/boot/efi} ]] || exit 1
 echo "${TEST_ESP-/boot/efi}"
 SH
+# omarchy-cmd-present, as the entrypoints' PATH sees it on a live system: the
+# command is the fixture root's /usr/bin.
+cat >"$stub_bin/omarchy-cmd-present" <<'SH'
+#!/bin/bash
+[[ -x $OMARCHY_MAC_BOOT_ROOT/usr/bin/$1 ]]
+SH
 # The root's LUKS header: keyslots, then tokens, which luksDump lists alike.
 cat >"$stub_bin/cryptsetup" <<'SH'
 #!/bin/bash
@@ -156,8 +166,8 @@ fixture() {
   printf 'format=1\nencrypt=1\n' >"$root/var/lib/omarchy/mac-first-boot/install.conf"
   printf 'staged_slot=0\nowner_slot=2\nrecovery_slot=3\nrecovery_shown=1\nphase=owner\n' >"$root/var/lib/omarchy/provisioning/luks-rekey.state"
   printf '%s\n' "$firmware_listing" >"$root/boot/initramfs-linux-aurora.img"
-  rm -f "$test_tmp"/fail-* "$test_tmp/build-without-firmware" "$test_tmp/uki-without-firmware" "$test_tmp/build-without-keymap" \
-    "$test_tmp/keep-layout"
+  rm -f "$test_tmp"/fail-* "$test_tmp/build-without-firmware" "$test_tmp/uki-without-firmware" "$test_tmp/grub-without-firmware" \
+    "$test_tmp/build-without-keymap" "$test_tmp/keep-layout"
   rm -rf "$root/usr/bin/grub-probe" "$root/usr/bin/grub-mkconfig"
   : >"$calls"
 }
@@ -167,6 +177,10 @@ limine_fixture() {
   : >"$root/var/lib/omarchy/limine.enabled"
   printf 'ESP_PATH="/boot/efi"\nKERNEL_CMDLINE[default]="root=UUID=x rw quiet rd.luks.name=%s=root %s"\n' "$luks_uuid" "$key_line" \
     >"$root/etc/default/limine"
+  # The UKI limine-update last built, which this Mac boots.
+  mkdir -p "$root/boot/efi/EFI/Linux"
+  "$stub_bin/build-image" "$root/boot/efi/EFI/Linux/omarchy_linux-aurora.efi.img" uki
+  echo "$root/boot/efi/EFI/Linux/omarchy_linux-aurora.efi.img" >"$root/boot/efi/EFI/Linux/omarchy_linux-aurora.efi"
 }
 
 run() {
@@ -347,6 +361,31 @@ error_says "the initramfs inside /boot/efi/EFI/Linux/omarchy_linux-aurora.efi do
 rm "$test_tmp/uki-without-firmware"
 run provision-commit || fail "the retry with a good UKI commits" "$(cat "$test_tmp/err")"
 pass "on a Limine Mac the firmware ordering is proven in the UKI that boots"
+
+# A Limine Mac that keeps GRUB boots /boot's image through GRUB's retained
+# entries, so a good UKI does not save a /boot image without the firmware.
+limine_fixture
+install -Dm755 /dev/null "$root/usr/bin/grub-probe"
+install -Dm755 /dev/null "$root/usr/bin/grub-mkconfig"
+touch "$test_tmp/grub-without-firmware"
+key_before=$(sha256sum <"$root/boot/omarchy/luks-key")
+if run provision-commit; then fail "a good UKI does not save a GRUB image without the firmware ordering"; fi
+error_says "/boot/initramfs-linux-aurora.img does not load the vendor firmware"
+[[ $(sha256sum <"$root/boot/omarchy/luks-key") == "$key_before" ]] || fail "the key stays for the retry"
+rm "$test_tmp/grub-without-firmware"
+run provision-commit || fail "the retry with both images good commits" "$(cat "$test_tmp/err")"
+pass "on a Limine Mac that keeps GRUB, the firmware ordering is proven in /boot's image too"
+
+# Prepare applies the same rule: a stale /boot image nothing boots does not
+# refuse a UKI-only Mac, and a Limine Mac that keeps GRUB is held to both.
+limine_fixture
+echo ./usr/lib/systemd/system-generators/systemd-cryptsetup-generator >"$root/boot/initramfs-linux-aurora.img"
+run provision-prepare || fail "a UKI-only Mac is ready however stale its unbooted GRUB image is" "$(cat "$test_tmp/err")"
+install -Dm755 /dev/null "$root/usr/bin/grub-probe"
+install -Dm755 /dev/null "$root/usr/bin/grub-mkconfig"
+if run provision-prepare; then fail "a Limine Mac that keeps GRUB is held to its GRUB image too"; fi
+error_says "before the keyboard firmware loads"
+pass "provision-prepare proves the firmware ordering in the images that boot"
 
 fixture
 sed -i '/^recovery_shown=/d' "$root/var/lib/omarchy/provisioning/luks-rekey.state"
