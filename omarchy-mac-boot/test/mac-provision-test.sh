@@ -33,7 +33,7 @@ SH
 # initramfs it carries.
 cat >"$stub_bin/lsinitcpio" <<'SH'
 #!/bin/bash
-[[ $1 == -l && -f $2 ]] && exec cat "$2"
+[[ $1 == -l && -f $2 ]] && exec cat "$(f=$(head -n 1 "$2"); [[ $f == /* && -f $f ]] && echo "$f" || echo "$2")"
 [[ $1 == -x && -f $2 ]] || exit 1
 tree=$2.tree
 [[ -d $tree ]] || tree=$(head -n 1 "$2").tree
@@ -63,13 +63,13 @@ done
 for layout in ${layouts//,/ }; do [[ -f $include/symbols/$layout ]] || exit 1; done
 SH
 # mkinitcpio builds from /etc/vconsole.conf as sd-vconsole and the plymouth
-# hook do; keep-layout leaves the previous build's layout in the image.
-cat >"$stub_bin/mkinitcpio" <<SH
+# hook do; keep-layout leaves the previous build's layout in the image. A UKI
+# build (omarchy-mac-boot-update on a Limine Mac) runs the same build into its
+# own image; uki-without-firmware leaves the firmware out of that one only.
+cat >"$stub_bin/build-image" <<SH
 #!/bin/bash
-echo "mkinitcpio \$*" >>"$calls"
-[[ ! -e $test_tmp/fail-mkinitcpio ]] || exit 1
-image=$root/boot/initramfs-linux-aurora.img
-if [[ -e $test_tmp/build-without-firmware ]]; then
+image=\$1
+if [[ -e $test_tmp/build-without-firmware || ( \${2:-} == uki && -e $test_tmp/uki-without-firmware ) ]]; then
   echo ./usr/lib/systemd/system-generators/systemd-cryptsetup-generator >"\$image"
 else
   printf '%s\n' "$firmware_listing" >"\$image"
@@ -88,6 +88,12 @@ layout=\$(. "$root/etc/vconsole.conf"; echo "\$XKBLAYOUT")
 [[ -z \$keymap || -e $test_tmp/build-without-keymap ]] || : >"\$tree/usr/share/kbd/keymaps/i386/qwerty/\$keymap.map.gz"
 [[ -z \$layout ]] || : >"\$tree/usr/share/X11/xkb/symbols/\$layout"
 SH
+cat >"$stub_bin/mkinitcpio" <<SH
+#!/bin/bash
+echo "mkinitcpio \$*" >>"$calls"
+[[ ! -e $test_tmp/fail-mkinitcpio ]] || exit 1
+exec "$stub_bin/build-image" "$root/boot/initramfs-linux-aurora.img"
+SH
 cat >"$stub_bin/omarchy-mac-boot-update" <<SH
 #!/bin/bash
 cmdline=\$(sed -n 's/^GRUB_CMDLINE_LINUX="\(.*\)"/\1/p' "$root/etc/default/grub")
@@ -96,7 +102,8 @@ echo "omarchy-mac-boot-update \$cmdline" >>"$calls"
 if [[ -e $root/var/lib/omarchy/limine.enabled ]]; then
   printf 'ESP_PATH="/boot/efi"\nKERNEL_CMDLINE[default]="%s"\n' "\$cmdline" >"$root/etc/default/limine"
   mkdir -p "$root/boot/efi/EFI/Linux"
-  echo "$root/boot/initramfs-linux-aurora.img" >"$root/boot/efi/EFI/Linux/omarchy_linux-aurora.efi"
+  "$stub_bin/build-image" "$root/boot/efi/EFI/Linux/omarchy_linux-aurora.efi.img" uki
+  echo "$root/boot/efi/EFI/Linux/omarchy_linux-aurora.efi.img" >"$root/boot/efi/EFI/Linux/omarchy_linux-aurora.efi"
 else
   printf 'linux /vmlinuz-linux-aurora %s\n' "\$cmdline" >"$root/boot/grub/grub.cfg"
 fi
@@ -149,7 +156,9 @@ fixture() {
   printf 'format=1\nencrypt=1\n' >"$root/var/lib/omarchy/mac-first-boot/install.conf"
   printf 'staged_slot=0\nowner_slot=2\nrecovery_slot=3\nrecovery_shown=1\nphase=owner\n' >"$root/var/lib/omarchy/provisioning/luks-rekey.state"
   printf '%s\n' "$firmware_listing" >"$root/boot/initramfs-linux-aurora.img"
-  rm -f "$test_tmp"/fail-* "$test_tmp/build-without-firmware" "$test_tmp/build-without-keymap" "$test_tmp/keep-layout"
+  rm -f "$test_tmp"/fail-* "$test_tmp/build-without-firmware" "$test_tmp/uki-without-firmware" "$test_tmp/build-without-keymap" \
+    "$test_tmp/keep-layout"
+  rm -rf "$root/usr/bin/grub-probe" "$root/usr/bin/grub-mkconfig"
   : >"$calls"
 }
 
@@ -316,7 +325,28 @@ limine_fixture
 run provision-commit || fail "commit succeeds on a Limine Mac" "$(cat "$test_tmp/err")"
 ! grep -q 'rd.luks.key=' "$root/etc/default/limine" || fail "the Limine command line drops rd.luks.key="
 run provision-verify || fail "a Limine Mac verifies after commit" "$(cat "$test_tmp/err")"
-pass "provision-commit rebuilds a Limine Mac's command line without the staged key"
+[[ $(cat "$calls") == "omarchy-mac-boot-update quiet rd.luks.name=$luks_uuid=root" ]] ||
+  fail "a Limine Mac without GRUB builds only the UKI, not /boot's GRUB image" "$(cat "$calls")"
+pass "provision-commit rebuilds a Limine Mac's command line without the staged key, with one initramfs build"
+
+limine_fixture
+install -Dm755 /dev/null "$root/usr/bin/grub-probe"
+install -Dm755 /dev/null "$root/usr/bin/grub-mkconfig"
+run provision-commit || fail "commit succeeds on a Limine Mac that keeps GRUB" "$(cat "$test_tmp/err")"
+[[ $(cat "$calls") == $'mkinitcpio -P\n'"omarchy-mac-boot-update quiet rd.luks.name=$luks_uuid=root" ]] ||
+  fail "a Limine Mac that keeps GRUB also rebuilds GRUB's image" "$(cat "$calls")"
+pass "a Limine Mac that keeps GRUB keeps its GRUB image current"
+
+# The firmware ordering is proven in the image the Mac boots, not in /boot's.
+limine_fixture
+key_before=$(sha256sum <"$root/boot/omarchy/luks-key")
+touch "$test_tmp/uki-without-firmware"
+if run provision-commit; then fail "a UKI without the firmware ordering fails commit"; fi
+error_says "the initramfs inside /boot/efi/EFI/Linux/omarchy_linux-aurora.efi does not load the vendor firmware"
+[[ $(sha256sum <"$root/boot/omarchy/luks-key") == "$key_before" ]] || fail "the key stays for the retry"
+rm "$test_tmp/uki-without-firmware"
+run provision-commit || fail "the retry with a good UKI commits" "$(cat "$test_tmp/err")"
+pass "on a Limine Mac the firmware ordering is proven in the UKI that boots"
 
 fixture
 sed -i '/^recovery_shown=/d' "$root/var/lib/omarchy/provisioning/luks-rekey.state"
