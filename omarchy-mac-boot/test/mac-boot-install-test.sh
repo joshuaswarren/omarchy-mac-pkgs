@@ -33,6 +33,18 @@ for file in "$ROOT"/bin/*; do
 done
 pass "every payload file keeps its installed path, content and mode"
 
+# A vendor .wants link pulls its unit only when it names a unit this package
+# or systemd ships; a dangling one is skipped at boot without a word.
+require_command systemctl
+units=$(dirname "$(realpath "$(command -v systemctl)")")/../lib/systemd/system
+while IFS= read -r -d '' link; do
+  unit=$(readlink "$link")
+  [[ $unit == "../${link##*/}" ]] || fail "${link#"$stage"} names its own unit: $unit"
+  [[ -f $stage/usr/lib/systemd/system/${link##*/} || -f $units/${link##*/} ]] ||
+    fail "${link#"$stage"} pulls a unit that neither this package nor systemd ships"
+done < <(find "$stage/usr/lib/systemd/system" -path '*.wants/*' -type l -print0)
+pass "every unit this package pulls in at boot exists"
+
 # omarchy-lifecycle-dispatch runs only root-owned entrypoints nobody else can write.
 for file in "$ROOT"/entrypoints/*; do
   staged=$stage/usr/lib/omarchy/mac-boot/${file##*/}
