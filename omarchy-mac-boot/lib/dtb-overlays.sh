@@ -120,7 +120,7 @@ dtb_overlays_build() {
       mv -f -- "$out.next" "$out.base"
       applied=1
     else
-      echo "dtb-overlays: $overlay does not apply to $name; $name stays as the kernel shipped it" >&2
+      dtb_overlays_note "$overlay does not apply to $name; $name stays as the kernel shipped it"
       rm -f -- "$out.next" "$out.base"
       return 1
     fi

@@ -179,6 +179,9 @@ mkdir -p "$tools_src"
 cat >"$tools_src/fdtoverlay" <<'SH'
 #!/bin/bash
 [[ $1 == -i && $3 == -o ]] || exit 1
+# An overlay whose whole content is "overlay FAIL" does not apply, the way a
+# real overlay fdtoverlay cannot merge does not.
+if grep -q '^overlay FAIL$' "$5" 2>/dev/null; then exit 1; fi
 body="$(tail -c +9 "$2")"$'\n'"overlay ${5##*/}"$'\n'
 size=$(( 8 + ${#body} ))
 {
@@ -799,8 +802,9 @@ grep -Fq "Apple Silicon boot check: warning:" "$test_tmp/err" &&
 pass "the matrix of configurations vouches the image the real library and update-m1n1 build"
 
 # Configurations read the way update-m1n1 reads them: a line that also sets or
-# unsets OMARCHY_DTB_OVERLAYS_OUTDIR keeps the rest of what it does, the call
-# counts only when it runs, and the configuration's own stderr is no library note.
+# unsets OMARCHY_DTB_OVERLAYS_OUTDIR runs as it is while the shim keeps the
+# copies in the workdir, the call counts only when it runs, and the
+# configuration's own stderr is no library note.
 packaged=$(cat "$ROOT/files/etc/default/update-m1n1")
 config_row() {
   local label=$1 config=$2 warning=${3:-}
@@ -834,6 +838,53 @@ config_row "a configuration that writes to stderr itself" \
 ! grep -Fq "a note from the configuration" "$test_tmp/err" ||
   fail "the configuration's own stderr is not replayed as a library note" "$(cat "$test_tmp/err")"
 pass "the configuration copy keeps lines that touch the outdir, counts the call only when it runs, and replays only library notes"
+
+# The copies' directory is private by construction: adjacent mentions of
+# OMARCHY_DTB_OVERLAYS_OUTDIR, unset first, cannot move the copies out of the
+# check's workdir, and the check leaves the configuration's directory alone.
+system linux-aurora
+mkdir -p "$root/usr/lib/omarchy-mac-boot/dtb-overlays/t8103"
+printf 'overlay\n' >"$root/usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo"
+printf '/usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo omarchy-ane\n' >"$test_tmp/files/owners"
+printf 'unset OMARCHY_DTB_OVERLAYS_OUTDIR;OMARCHY_DTB_OVERLAYS_OUTDIR=%s\n%s\n' \
+  "$test_tmp/slipped-out" "$packaged" >"$root/etc/default/update-m1n1"
+run_update_m1n1 "$esp/m1n1/boot.bin" 2>/dev/null
+[[ -d $test_tmp/slipped-out ]] || fail "the fixture update-m1n1 honours the configuration's outdir"
+find "$test_tmp/slipped-out" -printf '%p %s %T@\n' | sort >"$test_tmp/slipped-out-files"
+rm -rf "$root/run/omarchy-dtb-overlays"
+run_check --boot-chain
+expect_pass "adjacent unset and set of OMARCHY_DTB_OVERLAYS_OUTDIR keep the copies in the workdir"
+grep -Fq "Apple Silicon boot check: warning:" "$test_tmp/err" &&
+  fail "no spurious warning beside the adjacent outdir assignments" "$(cat "$test_tmp/err")"
+find "$test_tmp/slipped-out" -printf '%p %s %T@\n' | sort >"$test_tmp/slipped-out-files-after"
+cmp -s "$test_tmp/slipped-out-files" "$test_tmp/slipped-out-files-after" ||
+  fail "the check leaves the configuration's outdir alone" "$(diff "$test_tmp/slipped-out-files" "$test_tmp/slipped-out-files-after")"
+pass "the check touches no outdir but its own"
+
+# update-m1n1 sources the configuration with set -e; a failing command there
+# aborts update-m1n1, and the check refuses the same way instead of vouching
+# for bytes update-m1n1 would never build.
+system linux-aurora
+printf 'false\nDTBS="%s %s"\n%s\n' "${dtbs[0]}" "${dtbs[2]}" "$packaged" >"$root/etc/default/update-m1n1"
+run_check --boot-chain
+expect_fail "a failing command before a valid assignment in the configuration" \
+  "update-m1n1 would abort while reading /etc/default/update-m1n1"
+pass "the check aborts where update-m1n1 aborts"
+
+# A failed overlay is the library's one note, and the check replays it even
+# though the configuration's own output is discarded.
+system linux-aurora
+mkdir -p "$root/usr/lib/omarchy-mac-boot/dtb-overlays/t8103"
+printf 'overlay FAIL\n' >"$root/usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo"
+printf '/usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo omarchy-ane\n' >"$test_tmp/files/owners"
+printf '%s\n' "$packaged" >"$root/etc/default/update-m1n1"
+run_update_m1n1 "$esp/m1n1/boot.bin" 2>/dev/null
+run_check --boot-chain
+expect_pass "an overlay that does not apply leaves the kernel's device tree in place"
+grep -Fq "dtb-overlays: $root/usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo does not apply to t8103-j274.dtb" \
+  "$test_tmp/err" ||
+  fail "the check replays the library's note" "$(cat "$test_tmp/err")"
+pass "a failed overlay is reported through the one notes channel"
 
 # dtb_list with the empty root of a real system: every word globs once, an
 # unmatched glob stays literal as in update-m1n1, and the library's copies pass through.
