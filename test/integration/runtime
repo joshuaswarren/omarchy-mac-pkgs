@@ -1,4 +1,4 @@
 # The Omarchy runtime CI tests the packages against: a repository and a full commit.
 # Move it deliberately, like a recipe pin. Today the head of omacom/omarchy#14431;
 # upstream omacom/omarchy once it merges.
-omacom/omarchy 8614160b78e882c181f4ee38c51f507d43248979
+omacom/omarchy 64be6181b8e2a16348515071e9183cbb54fb4bc7
