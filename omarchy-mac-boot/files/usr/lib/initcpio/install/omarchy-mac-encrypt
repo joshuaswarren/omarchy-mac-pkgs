@@ -21,6 +21,8 @@ build() {
         ../omarchy-mac-encrypt.service
     add_file /usr/lib/omarchy/initcpio/omarchy-mac-encrypt-keydev.conf \
         '/usr/lib/systemd/system/run-systemd-cryptsetup-keydev\x2droot.mount.d/omarchy-mac-encrypt.conf' 644
+    add_file /usr/lib/omarchy/initcpio/omarchy-mac-encrypt-keydev-umount.conf \
+        /usr/lib/systemd/system/keydev-root-umount.service.d/omarchy-mac-encrypt.conf 644
 
     # Snapshot boots from the GRUB menu (grub-btrfs) mount read-only history;
     # the overlay unit makes that boot writable in a tmpfs for the session.
