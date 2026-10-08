@@ -22,8 +22,10 @@ grep -Fq 'Plymouth.SetSystemUpdateFunction(mac_system_update_callback);' "$ADDEN
   grep -Fq 'update_progress_bar(progress / 100);' "$ADDENDUM" ||
   fail "the addendum turns system-update's 0-100 into the bar's fraction"
 grep -Fq 'Plymouth.SetBootProgressFunction(mac_boot_progress_callback);' "$ADDENDUM" &&
-  grep -Fq 'Plymouth.SetDisplayMessageFunction(mac_display_message_callback);' "$ADDENDUM" ||
-  fail "the addendum takes over boot progress and messages"
+  grep -Fq 'Plymouth.SetDisplayMessageFunction(mac_display_message_callback);' "$ADDENDUM" &&
+  grep -Fq 'Plymouth.SetRefreshFunction(mac_refresh_callback);' "$ADDENDUM" &&
+  grep -Fq '  refresh_callback();' "$ADDENDUM" ||
+  fail "the addendum takes over boot progress and messages, and keeps the theme's refresh"
 ! grep -Fq 'SetPosition(10, 10' "$ADDENDUM" || fail "messages are not drawn in the top-left corner"
 echo 'ok - the addendum drives the bar from system-update and centres messages'
 
