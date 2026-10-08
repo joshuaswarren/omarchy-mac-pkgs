@@ -60,7 +60,7 @@ declare -A about=(
   [first-boot]="plain install (encrypt=0): first boot runs every deferred hardware step, owner setup, console login; Plymouth theme, /.snapshots, default sink"
   [conversion]="encrypted install: LUKS2 conversion in the initrd, first boot, owner setup re-keys to the owner password alone"
   [second-boot]="the re-keyed disk boots Limine's command line: a wrong password is refused, the owner's unlocks"
-  [password-change]="omarchy-drive-password moves the disk, login and root to a new password; the next boot unlocks with it"
+  [password-change]="omarchy-drive-password moves the disk to a new password; the next boot unlocks with it and the login password stays"
   [update]="omarchy update -y on the re-keyed disk: packages upgrade, boot files verify, the updated disk boots (needs update-verify, omacom/omarchy-mac#543)"
   [snapshot-restore]="omarchy-snapshot create adds a Limine entry that boots the snapshot; omarchy-snapshot restore puts it back (needs the snapshot boot check, ticket 36)"
   [factory-reset]="omarchy-system-factory-reset wipes the owner, /etc drift and the old keys; owner setup runs again (needs reset-prepare, ticket 34)"
@@ -940,15 +940,12 @@ scenario_password_change() {
   boot_guest "$disk" "$log" "$DISK_CMDLINE"
   unlock_prompt password-change
   serial_type "$new_password"
-  if console_login password-change "$new_password"; then
-    guest_run "password-change: su to root" "su -c 'echo __root_\$((6*7))__' root" "Password: ?=$new_password"
-    if grep -aq '__root_42__' "$log"; then
-      ok "password-change: the next boot unlocks with the new password, and it logs in $owner_user and root"
-    else
-      not_ok "password-change: the next boot unlocks with the new password and it logs in $owner_user, but root does not take it"
-    fi
-  elif console_login password-change "$owner_password"; then
-    not_ok "password-change: the next boot unlocks with the new password, but $owner_user still logs in with the old one: the login password did not follow the disk's"
+  # The disk password is its own: changing it leaves the login password as setup
+  # gave it (omacom/omarchy#14431).
+  if console_login password-change "$owner_password"; then
+    ok "password-change: the next boot unlocks with the new password, and $owner_user still logs in with the login password setup gave"
+  elif console_login password-change "$new_password"; then
+    not_ok "password-change: the next boot unlocks with the new password, but $owner_user now logs in with it: the login password followed the disk's"
   else
     not_ok "password-change: the next boot unlocks with the new password, but neither password logs in $owner_user"
   fi
