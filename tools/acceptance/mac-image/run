@@ -420,6 +420,8 @@ build_generic_kernel() {
   ((hook_files >= 3)) || fail "the generic initramfs carries no omarchy-mac-encrypt unit"
   lsinitcpio "$work/generic/initramfs-generic.img" | grep -q 'keydev\\x2droot.mount.d' ||
     fail "the generic initramfs lacks the sd-encrypt key-mount ordering drop-in"
+  lsinitcpio "$work/generic/initramfs-generic.img" | grep -F 'keydev-root-umount.service.d/omarchy-mac-encrypt.conf' >/dev/null ||
+    fail "the generic initramfs lacks the drop-in that unmounts the key device before switch-root"
   cp "$work/generic/mkinitcpio.log" "$evidence_dir/"
   while ((${#mounts[@]})); do umount_last; done
   detach_last
