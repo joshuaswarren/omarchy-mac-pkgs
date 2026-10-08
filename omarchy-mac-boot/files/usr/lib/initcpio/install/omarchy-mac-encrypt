@@ -36,6 +36,14 @@ build() {
     for rule in 10-dm.rules 13-dm-disk.rules 95-dm-notify.rules; do
         [[ -f /usr/lib/udev/rules.d/$rule ]] && add_file "/usr/lib/udev/rules.d/$rule"
     done
+
+    # The plymouth hook ran first. Its copy of the Omarchy theme gets the Mac's
+    # first-boot progress bar; the installed theme stays as its package shipped it.
+    local theme=$BUILDROOT/usr/share/plymouth/themes/omarchy/omarchy.script
+    if [[ -f $theme ]]; then
+        cat "$theme" /usr/lib/omarchy/initcpio/omarchy-mac-plymouth.script >"$theme.mac" &&
+            mv -f "$theme.mac" "$theme"
+    fi
     return 0
 }
 
@@ -44,6 +52,7 @@ help() {
 Systemd initrd unit that encrypts a plain btrfs root in place on first boot
 when /boot/efi/omarchy/install.conf is absent or encrypt=1. Journal lives on
 the ext4 Boot partition (/boot/omarchy/encrypt.state); throwaway key at
-/boot/omarchy/luks-key. No mkinitcpio runtime hook.
+/boot/omarchy/luks-key. Shows its progress on the Omarchy Plymouth theme's
+bar. No mkinitcpio runtime hook.
 HELPEOF
 }
