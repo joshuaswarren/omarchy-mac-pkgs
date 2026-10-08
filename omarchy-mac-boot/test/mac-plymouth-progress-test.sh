@@ -1,9 +1,8 @@
 #!/bin/bash
 
-# The encrypt install hook appends the Mac's first-boot addendum to the
-# initramfs copy of the Omarchy Plymouth theme, so `plymouth system-update`
-# moves the bar and display-message sits under it. The installed theme is never
-# written. test/integration checks the addendum against the runtime's theme.
+# The encrypt install hook appends the Mac's Plymouth addendum to the initramfs
+# copy of the Omarchy theme, never the installed theme. test/integration checks
+# the addendum against the runtime's theme.
 
 set -euo pipefail
 
@@ -13,7 +12,7 @@ ADDENDUM=$ROOT/files/usr/lib/omarchy/initcpio/omarchy-mac-plymouth.script
 
 fail() {
   echo "not ok - $1" >&2
-  [[ $# -lt 2 ]] || printf '%s\n' "$2" >&2
+  (( $# < 2 )) || printf '%s\n' "$2" >&2
   exit 1
 }
 
@@ -27,6 +26,11 @@ grep -Fq 'Plymouth.SetBootProgressFunction(mac_boot_progress_callback);' "$ADDEN
   grep -Fq '  refresh_callback();' "$ADDENDUM" ||
   fail "the addendum takes over boot progress and messages, and keeps the theme's refresh"
 ! grep -Fq 'SetPosition(10, 10' "$ADDENDUM" || fail "messages are not drawn in the top-left corner"
+refresh=$(sed -n '/^fun mac_refresh_callback()/,/^}/p' "$ADDENDUM")
+layout_line=$(grep -n '  refresh_callback();' <<<"$refresh" | cut -d: -f1 || true)
+place_line=$(grep -n '  mac_place_message();' <<<"$refresh" | cut -d: -f1 || true)
+(( ${layout_line:-0} > 0 && ${place_line:-0} > layout_line )) ||
+  fail "each refresh lets the theme lay out first, then puts the message back under the bar" "$refresh"
 echo 'ok - the addendum drives the bar from system-update and centres messages'
 
 tmp=$(mktemp -d)
