@@ -111,6 +111,7 @@ if [[ -e $root/var/lib/omarchy/limine.enabled ]]; then
 else
   printf 'linux /vmlinuz-linux-aurora %s\n' "\$cmdline" >"$root/boot/grub/grub.cfg"
 fi
+[[ ! -e $test_tmp/fail-boot-update-after-write ]] || exit 1
 SH
 cat >"$stub_bin/findmnt" <<'SH'
 #!/bin/bash
@@ -417,6 +418,24 @@ for failure in fail-mkinitcpio fail-boot-update build-without-firmware; do
   run provision-verify || fail "$failure: the retry leaves nothing behind"
 done
 pass "a failed rebuild, or one without the firmware ordering, keeps the unattended unlock for the retry"
+
+# An updater that fails after rewriting the command line, and whose restore
+# fails too: the key stays and the boot files carry the restored command line
+# for the retry.
+limine_fixture
+key_before=$(sha256sum <"$root/boot/omarchy/luks-key")
+touch "$test_tmp/fail-boot-update-after-write"
+if run provision-commit; then fail "commit fails when the updater fails after its rewrite"; fi
+[[ $(sha256sum <"$root/boot/omarchy/luks-key") == "$key_before" ]] || fail "the boot-partition key stays"
+grep -Fq 'rd.luks.key=' "$root/etc/default/limine" || fail "the restore names the key again" "$(cat "$root/etc/default/limine")"
+grep -Fxq 'phase=configured' "$root/boot/omarchy/encrypt.state" || fail "encrypt.state stays configured"
+[[ $(tail -n 1 "$calls") == "omarchy-mac-boot-update quiet rd.luks.name=$luks_uuid=root $key_line" ]] ||
+  fail "the restore rewrites the boot files with the key" "$(cat "$calls")"
+if run provision-verify; then fail "the staged unlock remains"; fi
+rm -f "$test_tmp/fail-boot-update-after-write"
+run provision-commit || fail "the retry commits" "$(cat "$test_tmp/err")"
+run provision-verify || fail "the retry leaves nothing behind"
+pass "an updater that fails after its rewrite still leaves the restored command line"
 
 # An attempt killed after it rewrote GRUB's defaults, then a retry whose
 # rebuild fails: the key is still on the boot partition, so the command line
