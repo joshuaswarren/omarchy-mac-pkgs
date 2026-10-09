@@ -97,7 +97,7 @@ apple_rekey_boot() {
   # omarchy-mac-encrypt. /boot's image is rebuilt only where GRUB can boot it.
   if limine_mac && ! grub_tools_present; then
     omarchy-mac-boot-update >&2 && return
-  elif "${OMARCHY_MKINITCPIO:-/usr/bin/mkinitcpio}" -P </dev/null >&2 && omarchy-mac-boot-update >&2; then
+  elif "$MAC_BOOT_ROOT/usr/bin/mkinitcpio" -P </dev/null >&2 && omarchy-mac-boot-update >&2; then
     return
   fi
   log_step "mkinitcpio or omarchy-mac-boot-update failed while dropping the staged key"

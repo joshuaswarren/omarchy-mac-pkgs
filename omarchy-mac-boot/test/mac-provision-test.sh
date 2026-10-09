@@ -92,12 +92,16 @@ layout=\$(. "$root/etc/vconsole.conf"; echo "\$XKBLAYOUT")
 [[ -z \$keymap || -e $test_tmp/build-without-keymap ]] || : >"\$tree/usr/share/kbd/keymaps/i386/qwerty/\$keymap.map.gz"
 [[ -z \$layout ]] || : >"\$tree/usr/share/X11/xkb/symbols/\$layout"
 SH
-cat >"$stub_bin/mkinitcpio" <<SH
+# The re-key builds with the image root's own mkinitcpio; the stub sits where
+# the fixed path below MAC_BOOT_ROOT resolves in tests.
+mkdir -p "$root/usr/bin"
+cat >"$root/usr/bin/mkinitcpio" <<SH
 #!/bin/bash
 echo "mkinitcpio \$*" >>"$calls"
 [[ ! -e $test_tmp/fail-mkinitcpio ]] || exit 1
 exec "$stub_bin/build-image" "$root/boot/initramfs-linux-aurora.img"
 SH
+chmod +x "$root/usr/bin/mkinitcpio"
 cat >"$stub_bin/omarchy-mac-boot-update" <<SH
 #!/bin/bash
 cmdline=\$(sed -n 's/^GRUB_CMDLINE_LINUX="\(.*\)"/\1/p' "$root/etc/default/grub")
@@ -185,7 +189,7 @@ limine_fixture() {
 }
 
 run() {
-  OMARCHY_MAC_BOOT_ROOT=$root OMARCHY_MKINITCPIO="$stub_bin/mkinitcpio" PATH="$stub_bin:$PATH" "$entry/$1" "${@:2}" 2>"$test_tmp/err"
+  OMARCHY_MAC_BOOT_ROOT=$root PATH="$stub_bin:$PATH" "$entry/$1" "${@:2}" 2>"$test_tmp/err"
 }
 
 snapshot() {
@@ -519,7 +523,7 @@ rm "$test_tmp/build-without-keymap"
 for failure in TEST_LOADKEYS_FAIL TEST_XKB_FAIL; do
   fixture
   printf '%s\n' "$danish" >"$root/etc/vconsole.conf"
-  if env "$failure=1" OMARCHY_MAC_BOOT_ROOT="$root" OMARCHY_MKINITCPIO="$stub_bin/mkinitcpio" PATH="$stub_bin:$PATH" "$entry/provision-commit" 2>"$test_tmp/err"; then
+  if env "$failure=1" OMARCHY_MAC_BOOT_ROOT="$root" PATH="$stub_bin:$PATH" "$entry/provision-commit" 2>"$test_tmp/err"; then
     fail "$failure: a layout that does not load from the image fails commit"
   fi
   error_says "does not load from the image's own files"
