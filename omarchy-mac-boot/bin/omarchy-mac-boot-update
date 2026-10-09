@@ -16,7 +16,7 @@ set -uo pipefail
 grub_keep=$(dirname -- "$(realpath -- "$0")")/../lib/omarchy-mac/boot/grub-keep.sh
 [[ -r $grub_keep ]] || grub_keep=$(dirname -- "$(realpath -- "$0")")/../lib/grub-keep.sh
 # shellcheck source=../lib/grub-keep.sh
-source "$grub_keep"
+source "$grub_keep" || { echo "omarchy-mac-boot-update: cannot load $grub_keep" >&2; exit 1; }
 
 if ! omarchy-mac-limine-active; then
   update-grub || { echo "omarchy-mac-boot-update: update-grub failed" >&2; exit 1; }
