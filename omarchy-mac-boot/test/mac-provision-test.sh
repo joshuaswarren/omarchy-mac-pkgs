@@ -184,7 +184,7 @@ limine_fixture() {
 }
 
 run() {
-  OMARCHY_MAC_BOOT_ROOT=$root PATH="$stub_bin:$PATH" "$entry/$1" "${@:2}" 2>"$test_tmp/err"
+  OMARCHY_MAC_BOOT_ROOT=$root OMARCHY_MKINITCPIO="$stub_bin/mkinitcpio" PATH="$stub_bin:$PATH" "$entry/$1" "${@:2}" 2>"$test_tmp/err"
 }
 
 snapshot() {
@@ -500,7 +500,7 @@ rm "$test_tmp/build-without-keymap"
 for failure in TEST_LOADKEYS_FAIL TEST_XKB_FAIL; do
   fixture
   printf '%s\n' "$danish" >"$root/etc/vconsole.conf"
-  if env "$failure=1" OMARCHY_MAC_BOOT_ROOT="$root" PATH="$stub_bin:$PATH" "$entry/provision-commit" 2>"$test_tmp/err"; then
+  if env "$failure=1" OMARCHY_MAC_BOOT_ROOT="$root" OMARCHY_MKINITCPIO="$stub_bin/mkinitcpio" PATH="$stub_bin:$PATH" "$entry/provision-commit" 2>"$test_tmp/err"; then
     fail "$failure: a layout that does not load from the image fails commit"
   fi
   error_says "does not load from the image's own files"
