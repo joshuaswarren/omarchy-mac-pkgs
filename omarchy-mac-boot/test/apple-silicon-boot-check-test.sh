@@ -902,6 +902,25 @@ pass "a repeated DTBS word keeps its own occurrence"
 config_row "a plain tree appended after its overlaid copy" \
   $'export LC_ALL=C\n. /usr/lib/omarchy-mac/boot/dtb-overlays.sh\ndtb_overlays_update_m1n1\n'"DTBS=\"\$DTBS $tree\""
 
+# An overlaid first tree repeated where the configuration requires its plain
+# bytes must not pass the expected-image or reordered-image comparison.
+system linux-aurora t8103-j274.dtb
+tree=${dtbs[0]}
+append_config=$packaged$'\n'"DTBS=\"\$DTBS $tree\""
+mkdir -p "$root/usr/lib/omarchy-mac-boot/dtb-overlays/t8103"
+printf 'overlay\n' >"$root/usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo"
+printf '/usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo omarchy-ane\n' >"$test_tmp/files/owners"
+printf '%s\n' "$append_config" >"$root/etc/default/update-m1n1"
+run_update_m1n1 "$esp/m1n1/boot.bin" 2>/dev/null
+run_check --boot-chain
+expect_pass "an actual overlaid tree followed by its plain occurrence"
+printf '%s\n%s\n' "$packaged" 'DTBS="$DTBS ${DTBS%% *}"' >"$root/etc/default/update-m1n1"
+run_update_m1n1 "$esp/m1n1/boot.bin" 2>/dev/null
+printf '%s\n' "$append_config" >"$root/etc/default/update-m1n1"
+run_check --boot-chain
+expect_fail "an overlaid tree twice is refused where DTBS requires its plain occurrence" "with the package overlays"
+pass "the occurrence cursor distinguishes overlaid and plain copies of one source"
+
 # The same configuration, with a plain tree twice on the ESP where DTBS
 # carries the overlaid copy first: refused, where one file per source path
 # would build the plain expectation and accept it.
