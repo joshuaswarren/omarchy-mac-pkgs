@@ -125,6 +125,44 @@ initramfs_orders_firmware() {
   image_orders_firmware "$MAC_BOOT_ROOT/boot/initramfs-$kernel.img" "/boot/initramfs-$kernel.img"
 }
 
+# The UKI bakes its command line at build time, and limine-mkinitcpio-install
+# swallows a failed build (process_uki_kernel || return 0, and process_kernel
+# || true, in 1.39.0-2 and 1.40.0-2), so limine-update can exit 0 with the
+# previous UKI still on the ESP, its command line still naming the staged
+# key. Commit must not shred the key while the UKI that boots still points at
+# it. This guard is the re-key's own: whatever else a masked build leaves
+# stale stays with limine-update, whose exit status cannot be trusted. The
+# extraction is the objcopy pattern the firmware ordering uses for .initrd;
+# the section is NUL ended, hence grep -a. A UKI with no command line at all
+# (limine-entry-tool omits it under Secure Boot with Snapper) cannot name the
+# key, so an empty section passes.
+boot_uki_staged_key_gone() {
+  local kernel uki tmp
+  limine_mac || return 0
+  kernel=$(omarchy-mac-kernel) || return 1
+  uki=$(limine_esp_path)/EFI/Linux/omarchy_$kernel.efi
+  tmp=$(mktemp) || return 1
+  if ! objcopy -O binary --only-section=.cmdline "$MAC_BOOT_ROOT$uki" "$tmp" 2>/dev/null; then
+    rm -f "$tmp"
+    log_step "cannot read the command line inside $uki"
+    return 1
+  fi
+  grep -aq 'rd\.luks\.key=' "$tmp"
+  case $? in
+    1) rm -f "$tmp" ;;
+    0)
+      rm -f "$tmp"
+      log_step "$uki still names the staged install key in its command line; the UKI was not rebuilt"
+      return 1
+      ;;
+    *) # A read error is not evidence the key is gone.
+      rm -f "$tmp"
+      log_step "cannot read the command line inside $uki"
+      return 1
+      ;;
+  esac
+}
+
 # The images this Mac boots: on a Limine Mac the initramfs inside its UKI,
 # and /boot's image besides wherever GRUB is kept, because GRUB's retained
 # entries boot it -- also where OMARCHY_MAC_BOOT_UPDATE_GRUB only suppressed
@@ -166,7 +204,8 @@ image_orders_firmware() {
 }
 
 # The owner types the disk password at the next boot with the layout the image
-# that boots carries (the initramfs inside the UKI on a Limine Mac), and setup
+# that boots carries (the initramfs inside the UKI on a Limine Mac, and
+# /boot's image too wherever GRUB is kept), and setup
 # took that password with the layout /etc/vconsole.conf sets now. A retry that
 # picked another layout must not keep the old one in the image, so the image
 # must carry this vconsole.conf and what loads it, and both must load from the
@@ -174,9 +213,17 @@ image_orders_firmware() {
 # cannot type Latin letters) must leave no other layout behind in it. Fails
 # closed when the image cannot be read.
 boot_image_types_layout() {
-  local work status=0
+  local work status=0 kernel
   work=$(mktemp -d) || return 1
   boot_image_check_layout "$work" || status=$?
+  # GRUB's retained entries boot /boot's image too: the same reachability
+  # rule boot_image_orders_firmware applies to the firmware ordering.
+  if (( status == 0 )) && limine_mac && grub_tools_present; then
+    kernel=$(omarchy-mac-kernel) || status=$?
+    if (( status == 0 )); then
+      boot_image_check_layout "$work" "$MAC_BOOT_ROOT/boot/initramfs-$kernel.img" "/boot/initramfs-$kernel.img" || status=$?
+    fi
+  fi
   rm -rf "$work"
   return "$status"
 }
@@ -184,7 +231,9 @@ boot_image_types_layout() {
 boot_image_check_layout() {
   local work=$1 kernel image label esp tree missing
   kernel=$(omarchy-mac-kernel) || return 1
-  if limine_mac; then
+  if (( $# >= 3 )); then
+    image=$2 label=$3
+  elif limine_mac; then
     esp=$(limine_esp_path)
     label="the initramfs inside $esp/EFI/Linux/omarchy_$kernel.efi"
     image=$work/uki.initrd
@@ -197,8 +246,10 @@ boot_image_check_layout() {
     image=$MAC_BOOT_ROOT/boot/initramfs-$kernel.img
     label=/boot/initramfs-$kernel.img
   fi
-  tree=$work/tree
-  mkdir -p "$tree" || return 1
+  # A fresh extraction dir per call: the same dir twice would merge the
+  # previous image's files into this one, and a good UKI would supply what
+  # the GRUB image is missing. $work is removed by the caller.
+  tree=$(mktemp -d "$work/tree.XXXXXX") || return 1
   (cd "$tree" && lsinitcpio -x "$image" >/dev/null 2>&1) || {
     log_step "cannot extract $label"
     return 1
@@ -356,7 +407,7 @@ provision_commit() {
   # The boot-partition key goes last: until then the initramfs still unlocks
   # with it, so a failure only has to put rd.luks.key= back, whichever attempt
   # dropped it.
-  if ! apple_rekey_boot || ! boot_image_orders_firmware || ! boot_image_types_layout; then
+  if ! apple_rekey_boot || ! boot_uki_staged_key_gone || ! boot_image_orders_firmware || ! boot_image_types_layout; then
     if [[ -f $BOOT_LUKS_KEY ]] && ! grep -q 'rd.luks.key=' "$GRUB_DEFAULT" 2>/dev/null; then
       log_step "restoring rd.luks.key= for the retry"
       grub_restore_rd_luks_key && omarchy-mac-boot-update >&2 || true

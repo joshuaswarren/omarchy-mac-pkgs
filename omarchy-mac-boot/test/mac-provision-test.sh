@@ -41,7 +41,13 @@ tree=$2.tree
 SH
 cat >"$stub_bin/objcopy" <<'SH'
 #!/bin/bash
-[[ "$1 $2 $3" == "-O binary --only-section=.initrd" && -f $4 ]] && cp "$4" "$5"
+# A UKI fixture names its initramfs listing on line 1 and carries the command
+# line it was built with on line 2: .initrd is the whole file, .cmdline is
+# line 2.
+if [[ "$1 $2 $3" == "-O binary --only-section=.initrd" && -f $4 ]]; then
+  exec cp "$4" "$5"
+fi
+[[ "$1 $2 $3" == "-O binary --only-section=.cmdline" && -f $4 ]] && sed -n '2p' "$4" >"$5"
 SH
 # The chroot'ed loadkeys and xkbcli find the layout in the image's own files.
 cat >"$stub_bin/chroot" <<'SH'
@@ -79,6 +85,11 @@ else
   printf '%s\n' "$firmware_listing" >"\$image"
 fi
 [[ ! -e $test_tmp/keep-layout ]] || exit 0
+# keep-grub-layout leaves only /boot's plain image stale (the UKI build names
+# itself uki as its second word): a build can leave one image's layout behind.
+if [[ \${2:-} != uki && -e $test_tmp/keep-grub-layout ]]; then
+  exit 0
+fi
 tree=\$image.tree
 rm -rf "\$tree"
 mkdir -p "\$tree/usr/bin" "\$tree/usr/lib/systemd" "\$tree/usr/share/kbd/keymaps/i386/qwerty" "\$tree/usr/share/X11/xkb/symbols"
@@ -89,7 +100,13 @@ install -m755 /dev/null "\$tree/usr/bin/loadkeys"
 install -Dm644 "$root/etc/vconsole.conf" "\$tree/etc/vconsole.conf"
 keymap=\$(. "$root/etc/vconsole.conf"; echo "\$KEYMAP")
 layout=\$(. "$root/etc/vconsole.conf"; echo "\$XKBLAYOUT")
-[[ -z \$keymap || -e $test_tmp/build-without-keymap ]] || : >"\$tree/usr/share/kbd/keymaps/i386/qwerty/\$keymap.map.gz"
+if [[ -z \$keymap || -e $test_tmp/build-without-keymap ]]; then
+  :
+elif [[ \${2:-} != uki && -e $test_tmp/grub-without-keymap ]]; then
+  : # grub-without-keymap leaves the keymap out of /boot's plain image only
+else
+  : >"\$tree/usr/share/kbd/keymaps/i386/qwerty/\$keymap.map.gz"
+fi
 [[ -z \$layout ]] || : >"\$tree/usr/share/X11/xkb/symbols/\$layout"
 SH
 # The re-key builds with the image root's own mkinitcpio; the stub sits where
@@ -110,8 +127,11 @@ echo "omarchy-mac-boot-update \$cmdline" >>"$calls"
 if [[ -e $root/var/lib/omarchy/limine.enabled ]]; then
   printf 'ESP_PATH="/boot/efi"\nKERNEL_CMDLINE[default]="%s"\n' "\$cmdline" >"$root/etc/default/limine"
   mkdir -p "$root/boot/efi/EFI/Linux"
+  # A masked build: limine-update exits 0 but leaves the previous UKI, whose
+  # command line still says what it said when it was built.
+  [[ ! -e $test_tmp/masked-uki ]] || exit 0
   "$stub_bin/build-image" "$root/boot/efi/EFI/Linux/omarchy_linux-aurora.efi.img" uki
-  echo "$root/boot/efi/EFI/Linux/omarchy_linux-aurora.efi.img" >"$root/boot/efi/EFI/Linux/omarchy_linux-aurora.efi"
+  printf '%s\n%s\n' "$root/boot/efi/EFI/Linux/omarchy_linux-aurora.efi.img" "\$cmdline" >"$root/boot/efi/EFI/Linux/omarchy_linux-aurora.efi"
 else
   printf 'linux /vmlinuz-linux-aurora %s\n' "\$cmdline" >"$root/boot/grub/grub.cfg"
 fi
@@ -182,10 +202,13 @@ limine_fixture() {
   : >"$root/var/lib/omarchy/limine.enabled"
   printf 'ESP_PATH="/boot/efi"\nKERNEL_CMDLINE[default]="root=UUID=x rw quiet rd.luks.name=%s=root %s"\n' "$luks_uuid" "$key_line" \
     >"$root/etc/default/limine"
-  # The UKI limine-update last built, which this Mac boots.
+  # The UKI limine-update last built, which this Mac boots: its initramfs
+  # listing, and the command line it was built with, still naming the key.
   mkdir -p "$root/boot/efi/EFI/Linux"
   "$stub_bin/build-image" "$root/boot/efi/EFI/Linux/omarchy_linux-aurora.efi.img" uki
-  echo "$root/boot/efi/EFI/Linux/omarchy_linux-aurora.efi.img" >"$root/boot/efi/EFI/Linux/omarchy_linux-aurora.efi"
+  printf '%s\n%s\n' "$root/boot/efi/EFI/Linux/omarchy_linux-aurora.efi.img" \
+    "root=UUID=x rw quiet rd.luks.name=$luks_uuid=root $key_line" \
+    >"$root/boot/efi/EFI/Linux/omarchy_linux-aurora.efi"
 }
 
 run() {
@@ -407,6 +430,10 @@ pass "only a recovery slot the owner acknowledged is recorded"
 # the boot partition, rd.luks.key= comes back and the boot files are rebuilt with it.
 for failure in fail-mkinitcpio fail-boot-update build-without-firmware; do
   fixture
+  # The image a failed build leaves behind is a good, extractable one: commit
+  # must refuse because of the failure itself, not because the stale fixture
+  # image cannot be extracted.
+  "$stub_bin/build-image" "$root/boot/initramfs-linux-aurora.img"
   grub_before=$(cat "$root/etc/default/grub")
   key_before=$(sha256sum <"$root/boot/omarchy/luks-key")
   touch "$test_tmp/$failure"
@@ -440,6 +467,24 @@ rm -f "$test_tmp/fail-boot-update-after-write"
 run provision-commit || fail "the retry commits" "$(cat "$test_tmp/err")"
 run provision-verify || fail "the retry leaves nothing behind"
 pass "an updater that fails after its rewrite still leaves the restored command line"
+
+# limine-mkinitcpio-install swallows a failed UKI build, so limine-update can
+# exit 0 with the previous UKI still on the ESP, its command line still
+# naming the staged key: commit refuses, puts rd.luks.key= back and keeps the
+# key, instead of discarding it under an image that still names it.
+limine_fixture
+key_before=$(sha256sum <"$root/boot/omarchy/luks-key")
+touch "$test_tmp/masked-uki"
+if run provision-commit; then fail "a masked UKI build fails commit"; fi
+error_says "still names the staged install key in its command line"
+[[ $(sha256sum <"$root/boot/omarchy/luks-key") == "$key_before" ]] || fail "the boot-partition key stays"
+grep -Fq 'rd.luks.key=' "$root/etc/default/limine" || fail "the restore names the key again" "$(cat "$root/etc/default/limine")"
+[[ $(tail -n 1 "$calls") == "omarchy-mac-boot-update quiet rd.luks.name=$luks_uuid=root $key_line" ]] ||
+  fail "the restore rewrites the boot files with the key" "$(cat "$calls")"
+rm "$test_tmp/masked-uki"
+run provision-commit || fail "the retry with a rebuilt UKI commits" "$(cat "$test_tmp/err")"
+run provision-verify || fail "the retry leaves nothing behind"
+pass "a masked UKI build keeps the staged key until the booting UKI stops naming it"
 
 # An attempt killed after it rewrote GRUB's defaults, then a retry whose
 # rebuild fails: the key is still on the boot partition, so the command line
@@ -548,8 +593,56 @@ mv "$stub_bin/objcopy" "$stub_bin/objcopy.ok"
 mv "$stub_bin/objcopy.fail" "$stub_bin/objcopy"
 if run provision-commit; then fail "a UKI whose initramfs cannot be read fails commit"; fi
 mv "$stub_bin/objcopy.ok" "$stub_bin/objcopy"
-error_says "cannot read the initramfs inside /boot/efi/EFI/Linux/omarchy_linux-aurora.efi"
+error_says "inside /boot/efi/EFI/Linux/omarchy_linux-aurora.efi"
 pass "on a Limine Mac the layout is proven in the UKI that boots, and an unreadable one fails closed"
+
+# A Limine Mac that keeps GRUB types the password on /boot's image through
+# GRUB's retained entries: the layout is proven there too, and a good UKI
+# does not save a GRUB image that kept the old one.
+limine_fixture
+printf '%s\n' "$danish" >"$root/etc/vconsole.conf"
+install -Dm755 /dev/null "$root/usr/bin/grub-probe"
+install -Dm755 /dev/null "$root/usr/bin/grub-mkconfig"
+run provision-commit || fail "a Danish Limine Mac that keeps GRUB commits" "$(cat "$test_tmp/err")"
+# Re-stage what a retry finds: the key back on the boot partition, phase
+# configured and rd.luks.key= in GRUB's defaults.
+head -c 64 /dev/urandom >"$root/boot/omarchy/luks-key"
+chmod 600 "$root/boot/omarchy/luks-key"
+sed -i 's/^phase=.*/phase=configured/' "$root/boot/omarchy/encrypt.state"
+printf '%s\nGRUB_CMDLINE_LINUX_DEFAULT="splash"\n' "$grub_line" >"$root/etc/default/grub"
+: >"$calls"
+printf 'KEYMAP=us\nXKBLAYOUT=us\n' >"$root/etc/vconsole.conf"
+touch "$test_tmp/keep-grub-layout"
+key_before=$(sha256sum <"$root/boot/omarchy/luks-key")
+if run provision-commit; then fail "a good UKI does not save a GRUB image typing Danish"; fi
+error_says "/boot/initramfs-linux-aurora.img still carries the keyboard layout dk-latin1/dk"
+[[ $(sha256sum <"$root/boot/omarchy/luks-key") == "$key_before" ]] || fail "the key stays for the retry"
+rm "$test_tmp/keep-grub-layout"
+run provision-commit || fail "the retry with a rebuilt US GRUB image commits" "$(cat "$test_tmp/err")"
+run provision-verify || fail "the retry leaves nothing behind"
+pass "on a Limine Mac that keeps GRUB the layout is proven in /boot's image too"
+
+# The two images are extracted apart: a good UKI cannot supply the keymap a
+# GRUB image the Mac also boots is missing.
+limine_fixture
+printf '%s\n' "$danish" >"$root/etc/vconsole.conf"
+install -Dm755 /dev/null "$root/usr/bin/grub-probe"
+install -Dm755 /dev/null "$root/usr/bin/grub-mkconfig"
+run provision-commit || fail "a Danish Limine Mac that keeps GRUB commits" "$(cat "$test_tmp/err")"
+head -c 64 /dev/urandom >"$root/boot/omarchy/luks-key"
+chmod 600 "$root/boot/omarchy/luks-key"
+sed -i 's/^phase=.*/phase=configured/' "$root/boot/omarchy/encrypt.state"
+printf '%s\nGRUB_CMDLINE_LINUX_DEFAULT="splash"\n' "$grub_line" >"$root/etc/default/grub"
+: >"$calls"
+touch "$test_tmp/grub-without-keymap"
+key_before=$(sha256sum <"$root/boot/omarchy/luks-key")
+if run provision-commit; then fail "a good UKI does not save a GRUB image missing its keymap"; fi
+error_says "carries /etc/vconsole.conf but not what loads it at the disk password prompt (missing the dk-latin1 keymap)"
+[[ $(sha256sum <"$root/boot/omarchy/luks-key") == "$key_before" ]] || fail "the key stays for the retry"
+rm "$test_tmp/grub-without-keymap"
+run provision-commit || fail "the retry with the rebuilt keymap commits" "$(cat "$test_tmp/err")"
+run provision-verify || fail "the retry leaves nothing behind"
+pass "each boot image's layout files are proven from that image alone"
 
 # provision-verify: each leftover alone counts as the staged unlock.
 verify_fixture() {
