@@ -761,6 +761,7 @@ matrix_row() {
   esac
   case $dtbs_state in
     above) pre="DTBS=\"${dtbs[*]}\"" ;;
+    ':= above') pre=": \${DTBS:=\"${dtbs[*]}\"}" ;;
     after) post="DTBS=\"${dtbs[*]}\"" ;;
     ':= after') post=": \${DTBS:=\"${dtbs[*]}\"}" ;;
     'append after') post='DTBS="$DTBS /x.dtb"' ;;
@@ -797,7 +798,7 @@ matrix_row() {
 }
 for overlays in none applies none-applies; do
   for optout in none '=0' quoted; do
-    for dtbs_state in above after ':= after' 'append after' 'unset after' 'same value after' directory 'default= after' 'default- after' 'default+ after'; do
+    for dtbs_state in above ':= above' after ':= after' 'append after' 'unset after' 'same value after' directory 'default= after' 'default- after' 'default+ after'; do
       for dtc in ok old; do
         matrix_row "$overlays" "$optout" "$dtbs_state" "$dtc"
       done
@@ -903,9 +904,12 @@ config_row "a plain tree appended after its overlaid copy" \
   $'export LC_ALL=C\n. /usr/lib/omarchy-mac/boot/dtb-overlays.sh\ndtb_overlays_update_m1n1\n'"DTBS=\"\$DTBS $tree\""
 
 # An overlaid first tree repeated where the configuration requires its plain
-# bytes must not pass the expected-image or reordered-image comparison.
+# bytes must not pass the expected-image or reordered-image comparison. The
+# appended word spells the source the way the library's default and manifest
+# do (/lib/modules), so both DTBS words are one source and the occurrence
+# cursor is what keeps the second word's plain bytes.
 system linux-aurora t8103-j274.dtb
-tree=${dtbs[0]}
+tree=${dtbs[0]/\/usr\/lib/\/lib}
 append_config=$packaged$'\n'"DTBS=\"\$DTBS $tree\""
 mkdir -p "$root/usr/lib/omarchy-mac-boot/dtb-overlays/t8103"
 printf 'overlay\n' >"$root/usr/lib/omarchy-mac-boot/dtb-overlays/t8103/omarchy-ane.dtbo"
@@ -924,6 +928,7 @@ pass "the occurrence cursor distinguishes overlaid and plain copies of one sourc
 # The same configuration, with a plain tree twice on the ESP where DTBS
 # carries the overlaid copy first: refused, where one file per source path
 # would build the plain expectation and accept it.
+tree=${dtbs[0]}
 append_config=$packaged$'\n'"DTBS=\"\$DTBS $tree\""
 system linux-aurora
 mkdir -p "$root/usr/lib/omarchy-mac-boot/dtb-overlays/t8103"
