@@ -376,6 +376,11 @@ system() {
 
 run_check() {
   : >"$calls"
+  local config=$root/etc/default/update-m1n1
+  if [[ -f $config ]]; then
+    cp -p "$config" "$test_tmp/check-config-original"
+    sed "s|/usr/lib/omarchy-mac/boot|$ROOT/lib|g" "$test_tmp/check-config-original" >"$config"
+  fi
   set +e
   env -u LC_ALL -u LC_COLLATE LANG="${TEST_LANG:-C}" \
     TEST_CALLS="$calls" \
@@ -395,6 +400,7 @@ run_check() {
     bash "$check" "$@" >"$test_tmp/out" 2>"$test_tmp/err"
   status=$?
   set -e
+  [[ ! -f $test_tmp/check-config-original ]] || mv "$test_tmp/check-config-original" "$config"
 }
 
 # Every mount is read-only from the start, or a bind remounted read-only before
@@ -710,12 +716,14 @@ run_update_m1n1() {
     -e "s|/run/m1n1.conf|$test_tmp/m1n1.conf|g"
     -e 's|DTBS="\${DTBS}/apple/t6\*\.dtb \${DTBS}/apple/t81\*\.dtb"|DTBS="${UPDATE_M1N1_TEST_ROOT}${DTBS}/apple/t6*.dtb ${UPDATE_M1N1_TEST_ROOT}${DTBS}/apple/t81*.dtb"|'
   )
-  # The library the fixture sources redirects its copies the way the boot
-  # check's shim does: dtb_overlays_outdir is replaced, never the environment.
+  # The fixture library keeps its copies separate from the check's outputs.
   printf '. %s\ndtb_overlays_outdir() {\n  printf "%%s\\n" %s\n}\n' \
     "'$ROOT/lib/dtb-overlays.sh'" "'$test_tmp/expected-out'" >"$test_tmp/lib-fixture.sh"
+  mkdir -p "$test_tmp/fixture-lib"
+  cp "$test_tmp/lib-fixture.sh" "$test_tmp/fixture-lib/dtb-overlays.sh"
   sed "${translate[@]}" "$root/usr/bin/update-m1n1" >"$test_tmp/update-m1n1-runnable"
   sed -e "s|/usr/lib/omarchy-mac/boot/dtb-overlays.sh|$test_tmp/lib-fixture.sh|g" \
+    -e "s|/usr/lib/omarchy-mac/boot|$test_tmp/fixture-lib|g" \
     "$root/etc/default/update-m1n1" >"$test_tmp/update-m1n1-config"
   OMARCHY_DTB_OVERLAYS_ROOT=$root \
   PATH="$root/usr/bin:/usr/bin:/bin" \
@@ -851,6 +859,10 @@ config_row "a call in a branch that never runs" \
   "does not apply the device tree overlays"
 config_row "a call that is not at the start of its line" \
   $'export LC_ALL=C\n. /usr/lib/omarchy-mac/boot/dtb-overlays.sh && dtb_overlays_update_m1n1'
+config_row "a library sourced through a variable" \
+  $'boot_lib=/usr/lib/omarchy-mac/boot\n. "$boot_lib/dtb-overlays.sh"\ndtb_overlays_update_m1n1'
+[[ ! -e $root/run/omarchy-dtb-overlays ]] ||
+  fail "an indirect source keeps the copies in the check workdir"
 config_row "a configuration that writes to stderr itself" \
   "echo 'dtb-overlays: a note from the configuration' >&2"$'\n'"$packaged"
 ! grep -Fq "a note from the configuration" "$test_tmp/err" ||
@@ -903,11 +915,8 @@ pass "a repeated DTBS word keeps its own occurrence"
 config_row "a plain tree appended after its overlaid copy" \
   $'export LC_ALL=C\n. /usr/lib/omarchy-mac/boot/dtb-overlays.sh\ndtb_overlays_update_m1n1\n'"DTBS=\"\$DTBS $tree\""
 
-# An overlaid first tree repeated where the configuration requires its plain
-# bytes must not pass the expected-image or reordered-image comparison. The
-# appended word spells the source the way the library's default and manifest
-# do (/lib/modules), so both DTBS words are one source and the occurrence
-# cursor is what keeps the second word's plain bytes.
+# A repeated overlaid tree cannot stand in for its required plain occurrence,
+# even when both words spell the identical source path (/lib/modules).
 system linux-aurora t8103-j274.dtb
 tree=${dtbs[0]/\/usr\/lib/\/lib}
 append_config=$packaged$'\n'"DTBS=\"\$DTBS $tree\""
@@ -923,7 +932,7 @@ run_update_m1n1 "$esp/m1n1/boot.bin" 2>/dev/null
 printf '%s\n' "$append_config" >"$root/etc/default/update-m1n1"
 run_check --boot-chain
 expect_fail "an overlaid tree twice is refused where DTBS requires its plain occurrence" "with the package overlays"
-pass "the occurrence cursor distinguishes overlaid and plain copies of one source"
+pass "byte matching distinguishes overlaid and plain copies of one source"
 
 # The same configuration, with a plain tree twice on the ESP where DTBS
 # carries the overlaid copy first: refused, where one file per source path

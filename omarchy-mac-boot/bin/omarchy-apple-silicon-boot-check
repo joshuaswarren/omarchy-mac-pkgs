@@ -582,31 +582,27 @@ for name in SOURCE M1N1 U_BOOT CONFIG; do
   [[ -n ${seen[$name]:-} ]] || fail "/usr/bin/update-m1n1 has no $name default this check recognises"
 done
 
-# What update-m1n1 builds from: the configuration sourced the way update-m1n1
-# sources it, with /bin/sh, root's PATH and the real library, the copies and
-# their manifest in the workdir. The configuration loads a shim of the library
-# whose only changes return the workdir as the copies' directory, whatever the
-# configuration does, and keep the library's notes, replayed below, apart from
-# anything else the configuration prints.
+# Read the same configuration with /bin/sh. Install the private output
+# functions first: the library preserves them however it is sourced.
 SOURCE="" M1N1="" U_BOOT="" CONFIG="" DTBS="" disabled="" overlays_called=""
 dtbs_out=$workdir/dtbs-out
 library_notes=$workdir/library-notes
 config_file=$(path /etc/default/update-m1n1)
 if [[ -e $config_file ]]; then
-  printf '. %s\ndtb_overlays_outdir() {\n  printf "%%s\\n" %s\n}\ndtb_overlays_note() {\n  printf "dtb-overlays: %%s\\n" "$*" >>%s\n}\n' \
-    "'$overlay_lib'" "'$dtbs_out'" "'$library_notes'" >"$workdir/dtb-overlays.sh"
-  sed -E -e "s|/usr/lib/omarchy-mac/boot/dtb-overlays\.sh|$workdir/dtb-overlays.sh|g" \
-    "$config_file" >"$workdir/config-real" || fail "/etc/default/update-m1n1 cannot be read"
+  [[ -r $config_file ]] || fail "/etc/default/update-m1n1 cannot be read"
   rm -rf "$dtbs_out" "$library_notes"
   env -i PATH="${root:+$root/usr/bin:}/usr/bin:/bin" LANG=${LANG:-C} \
     OMARCHY_DTB_OVERLAYS_ROOT=$root \
     /bin/sh -c '
       set -e
       unset DTBS SOURCE M1N1 U_BOOT CONFIG M1N1_UPDATE_DISABLED OMARCHY_DTB_OVERLAYS_CALLED
+      dtb_overlays_outdir() { printf "%s\n" "$check_workdir/dtbs-out"; }
+      dtb_overlays_note() { printf "dtb-overlays: %s\n" "$*" >>"$check_workdir/library-notes"; }
+      check_workdir=$2
       . "$1" >/dev/null 2>&1
       printf "%s=%s\0" DTBS "${DTBS-}" SOURCE "${SOURCE-}" M1N1 "${M1N1-}" U_BOOT "${U_BOOT-}" CONFIG "${CONFIG-}" \
         M1N1_UPDATE_DISABLED "${M1N1_UPDATE_DISABLED-}" OMARCHY_DTB_OVERLAYS_CALLED "${OMARCHY_DTB_OVERLAYS_CALLED-}"
-    ' _ "$workdir/config-real" >"$workdir/config" ||
+    ' _ "$config_file" "$workdir" >"$workdir/config" ||
     fail "update-m1n1 would abort while reading /etc/default/update-m1n1"
   while IFS= read -r -d '' entry; do
     value=${entry#*=}
@@ -749,29 +745,6 @@ fi
 # carries, and update-m1n1 builds every word's own file in its position, so
 # the check must not keep one file per source path.
 dtb_paths=("${paths[@]}")
-unset paths
-declare -A dtb_next=()
-
-dtb_reset() {
-  local key
-  for key in "${!dtb_next[@]}"; do
-    unset "dtb_next[$key]"
-  done
-}
-
-# Store the next unconsumed occurrence of NAME in the caller's variable.
-# Call directly so the occurrence cursor remains in this shell.
-dtb_file_for() {
-  local name=$1 output_variable=$2 i next
-  next=${dtb_next[$name]:-0}
-  for (( i = next; i < ${#dtbs[@]}; i++ )); do
-    [[ ${dtbs[i]} == "$name" ]] || continue
-    dtb_next[$name]=$(( i + 1 ))
-    printf -v "$output_variable" '%s' "${dtb_paths[i]}"
-    return 0
-  done
-  return 1
-}
 
 m1n1_options() {
   local line
@@ -787,36 +760,26 @@ m1n1_options() {
 }
 
 build_image() {
-  local image=$1 dtb file paths=()
+  local image=$1
   shift
-  dtb_reset
-  for dtb; do
-    dtb_file_for "$dtb" file ||
-      fail "$image names $dtb more often than DTBS lists it"
-    paths+=("$file")
-  done
   {
-    cat "$root$M1N1" "${paths[@]}"
+    cat "$root$M1N1" "$@"
     gzip -c "$root$U_BOOT"
     m1n1_options
   } >"$image"
 }
 
-build_image "$workdir/boot.bin" "${dtbs[@]}"
+build_image "$workdir/boot.bin" "${dtb_paths[@]}"
 
-# The device trees in IMAGE from byte OFFSET on, one per flattened device tree
-# header (magic, then its big-endian total size), named by the expected device
-# tree with the same bytes. Fails unless they are exactly the expected ones,
-# each as often, in whatever order.
+# Match every DTB occurrence by its bytes, returning its actual input file.
+# A source may have both plain and overlaid occurrences with different bytes.
 dtb_order() {
-  local image=$1 offset=$2 end magic size hash file dtb
+  local image=$1 offset=$2 end magic size hash file
   local -A by_hash=() left=()
-  dtb_reset
-  for dtb in "${dtbs[@]}"; do
-    dtb_file_for "$dtb" file || return 1
+  for file in "${dtb_paths[@]}"; do
     hash=$(sha256sum <"$file")
     hash=${hash%% *}
-    by_hash[$hash]=$dtb
+    by_hash[$hash]=$file
     left[$hash]=$(( ${left[$hash]:-0} + 1 ))
   done
   end=$(stat -c %s "$image")

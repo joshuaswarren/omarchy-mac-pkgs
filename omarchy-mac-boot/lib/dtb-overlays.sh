@@ -19,17 +19,19 @@
 # /etc/default/update-m1n1 calls dtb_overlays_update_m1n1 to set DTBS; the
 # boot check sources the same configuration the same way to rebuild the same
 # image. OMARCHY_DTB_OVERLAYS_ROOT prefixes every path read or written. Where
-# the copies and their manifest land is dtb_overlays_outdir()'s decision: the
-# boot check and the tests replace that one function, never the environment.
+# the copies and their manifest land is dtb_overlays_outdir()'s decision.
+# Sourcing the library preserves a caller's output and note functions.
 # OMARCHY_DTB_OVERLAYS=0 turns the merge off.
 
 dtb_overlays_dir() {
   printf '%s\n' "${OMARCHY_DTB_OVERLAYS_ROOT:-}/usr/lib/omarchy-mac-boot/dtb-overlays"
 }
 
-dtb_overlays_outdir() {
-  printf '%s\n' "${OMARCHY_DTB_OVERLAYS_ROOT:-}/run/omarchy-dtb-overlays"
-}
+if ! command -v dtb_overlays_outdir >/dev/null 2>&1; then
+  dtb_overlays_outdir() {
+    printf '%s\n' "${OMARCHY_DTB_OVERLAYS_ROOT:-}/run/omarchy-dtb-overlays"
+  }
+fi
 
 # The overlays, one path per line, in the order they apply.
 dtb_overlays_list() {
@@ -169,9 +171,11 @@ dtb_overlays_apply() {
 
 # Why the overlays are left out, on stderr. The boot check replaces this to
 # keep the library's notes apart from anything else the configuration prints.
-dtb_overlays_note() {
-  echo "dtb-overlays: $*" >&2
-}
+if ! command -v dtb_overlays_note >/dev/null 2>&1; then
+  dtb_overlays_note() {
+    echo "dtb-overlays: $*" >&2
+  }
+fi
 
 # Sets DTBS for update-m1n1, with the overlaid copy of every device tree an
 # overlay applies to: over the DTBS the configuration already set, or, with
