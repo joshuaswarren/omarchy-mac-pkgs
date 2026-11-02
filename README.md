@@ -60,3 +60,7 @@ Omarchy Mac was started by [Naeem Malik](https://github.com/malik-na) in Septemb
 ## License
 
 MIT, as Omarchy. See [LICENSE](LICENSE).
+
+## Contributors
+
+Everyone credited so far: [CONTRIBUTORS.md](CONTRIBUTORS.md).
